@@ -1,0 +1,15 @@
+{
+  "live_mode": false,
+  "platforms": {
+    "linkedin": {"slots": 5, "hourly": true},
+    "facebook": {"slots": 5, "hourly": true}
+  },
+  "actions": {
+    "linkedin": ["find_target", "view_profile", "connect", "message", "follow"],
+    "facebook": ["find_target", "view_profile", "message", "follow", "comment"]
+  },
+  "defaults": {
+    "max_targets_per_run": 5,
+    "dry_run": true
+  }
+}
