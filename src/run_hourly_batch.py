@@ -7,6 +7,7 @@ from pathlib import Path
 from .ai_planner import plan
 from .discovery import discover
 from .main import run_slot
+from .social_enrichment import collect_for_lead
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
@@ -67,7 +68,7 @@ def main() -> int:
         platform_hint = "LinkedIn company page" if platform == "linkedin" else "Facebook public business Page"
         for slot, lead in enumerate(leads, start=1):
             name = lead.get("title", "").strip() or lead.get("url", "").strip()
-            append_lead({
+            row = {
                 "run_id": run_id,
                 "platform": platform,
                 "slot": str(slot),
@@ -82,9 +83,15 @@ def main() -> int:
                 "industrial_zone": str(planner.get("industrial_zone", "")),
                 "planned_query": next((q for q in queries if platform_hint.lower() in q.lower()), queries[0] if queries else ""),
                 "created_at": now_iso(),
-            })
-            run_slot(platform, slot, run_id, target=lead.get("url", ""), target_name=name)
+            }
+            append_lead(row)
             total += 1
+
+            # Real, read-only social enrichment through Composio. This does not
+            # post, like, comment, connect, message, delete or modify anything.
+            collect_for_lead(row)
+            # Keep the legacy local action log for traceability; it remains non-live.
+            run_slot(platform, slot, run_id, target=lead.get("url", ""), target_name=name)
 
     print(
         f"HOURLY BATCH COMPLETE | discovered_and_recorded={total} | facebook=5 | linkedin=5 "
