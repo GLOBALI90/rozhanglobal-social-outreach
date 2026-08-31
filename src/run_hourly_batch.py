@@ -6,7 +6,6 @@ from pathlib import Path
 
 from .ai_planner import plan
 from .discovery import discover
-from .main import run_slot
 from .social_enrichment import collect_for_lead
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,11 +86,9 @@ def main() -> int:
             append_lead(row)
             total += 1
 
-            # Real, read-only social enrichment through Composio. This does not
-            # post, like, comment, connect, message, delete or modify anything.
+            # Read-only Social enrichment through Composio. This step does not
+            # publish, message, comment, connect, like, follow or delete.
             collect_for_lead(row)
-            # Keep the legacy local action log for traceability; it remains non-live.
-            run_slot(platform, slot, run_id, target=lead.get("url", ""), target_name=name)
 
     print(
         f"HOURLY BATCH COMPLETE | discovered_and_recorded={total} | facebook=5 | linkedin=5 "
