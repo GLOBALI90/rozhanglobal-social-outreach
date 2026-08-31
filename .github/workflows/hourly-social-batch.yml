@@ -28,12 +28,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check AI, search and Gmail configuration
+      - name: Check AI, search, Composio and Gmail configuration
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
+          COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
@@ -42,16 +44,19 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing required repository secret: CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing required repository secret: CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
+          test -n "$COMPOSIO_BASE_URL" || { echo "Missing required repository secret: COMPOSIO_BASE_URL"; exit 1; }
+          test -n "$COMPOSIO_API_KEY" || { echo "Missing required repository secret: COMPOSIO_API_KEY"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
           test "$GMAIL_USERNAME" = "saberi.export.import@gmail.com" || { echo "GMAIL_USERNAME must be saberi.export.import@gmail.com"; exit 1; }
           test "$SEND_EMAILS" = "true" || { echo "SEND_EMAILS must be exactly true for this live-send workflow"; exit 1; }
 
-      - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
+      - name: Run AI-planned discovery and Composio social enrichment (5 Facebook + 5 LinkedIn)
         env:
           LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          COMPOSIO_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_CONNECTED_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,7 +67,7 @@ jobs:
           SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
         run: python -m src.run_hourly_batch
 
-      - name: Validate discovered lead count and targeting
+      - name: Validate discovered lead count, targeting and Composio enrichment
         run: |
           python - <<'PY'
           import csv
@@ -82,6 +87,13 @@ jobs:
           assert all(r.get('url') for r in fresh), 'Every discovered lead must have a URL'
           assert len({r.get('sector') for r in fresh}) == 1, 'One AI-selected sector should drive the hourly batch'
           assert all(r.get('country') == 'China' for r in fresh), 'Target country must be China'
+          if not __import__('os').path.exists('data/social_activity.csv'):
+              raise AssertionError('Composio enrichment file was not created')
+          with open('data/social_activity.csv', encoding='utf-8') as f:
+              activity = [r for r in csv.DictReader(f) if r.get('run_id') == run_id]
+          print('social_activity_records=', len(activity))
+          print('composio_successes=', sum(1 for r in activity if r.get('status') == 'success'))
+          assert activity, 'No Composio social enrichment records were produced'
           PY
 
       - name: Generate personalized emails and send eligible business emails
