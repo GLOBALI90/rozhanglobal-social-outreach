@@ -36,6 +36,7 @@ jobs:
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
         run: |
           test -n "$GEMINI_API_KEY" || { echo "Missing required repository secret: GEMINI_API_KEY"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing required repository secret: CLOUDFLARE_API_TOKEN"; exit 1; }
@@ -43,6 +44,8 @@ jobs:
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
+          test "$GMAIL_USERNAME" = "info@rojanglobal.com" || { echo "GMAIL_USERNAME must be info@rojanglobal.com"; exit 1; }
+          test "$SEND_EMAILS" = "true" || { echo "SEND_EMAILS must be exactly true for this live-send workflow"; exit 1; }
 
       - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
         env:
@@ -81,7 +84,7 @@ jobs:
           assert all(r.get('country') == 'China' for r in fresh), 'Target country must be China'
           PY
 
-      - name: Generate personalized email drafts / send eligible business emails
+      - name: Generate personalized emails and send eligible business emails
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
