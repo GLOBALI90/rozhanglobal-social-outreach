@@ -31,9 +31,13 @@ jobs:
       - name: Check AI and search configuration
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
         run: |
           test -n "$GEMINI_API_KEY" || { echo "Missing required repository secret: GEMINI_API_KEY"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing required repository secret: CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing required repository secret: CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
 
       - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
@@ -43,6 +47,9 @@ jobs:
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_MODEL: ${{ secrets.CLOUDFLARE_AI_MODEL }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
           YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
           SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
