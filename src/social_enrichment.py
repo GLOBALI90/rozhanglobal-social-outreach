@@ -36,12 +36,40 @@ def _compact(value: Any, limit: int = 12000) -> str:
 
 def _summary(value: Any) -> str:
     if isinstance(value, dict):
-        for key in ("message", "detail", "description", "text", "response", "data"):
+        for key in ("message", "detail", "description", "text", "response"):
             item = value.get(key)
             if isinstance(item, str) and item.strip():
                 return item.strip()[:4000]
         return json.dumps(value, ensure_ascii=False)[:4000]
     return str(value)[:4000]
+
+
+def _update_lead_context(run_id: str, target_url: str, social_notes: list[str]) -> None:
+    if not LEADS.exists() or not social_notes:
+        return
+    with LEADS.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+        fields = handle.name and (csv.DictReader(open(LEADS, encoding="utf-8")).fieldnames or [])
+    if not fields or "snippet" not in fields:
+        return
+    changed = False
+    note_text = " | ".join(n for n in social_notes if n)
+    for row in rows:
+        if row.get("run_id") == run_id and row.get("url") == target_url:
+            existing = str(row.get("snippet", "")).strip()
+            marker = "Composio social data: "
+            if marker not in existing:
+                row["snippet"] = f"{existing} {marker}{note_text}".strip()
+                changed = True
+            elif note_text and note_text not in existing:
+                row["snippet"] = f"{existing} | {note_text}"[:12000]
+                changed = True
+    if not changed:
+        return
+    with LEADS.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _run_tool(client: ComposioClient, tool: str, task: str) -> tuple[str, str, str]:
@@ -57,6 +85,7 @@ def collect_for_lead(lead: dict[str, str]) -> None:
     platform = lead.get("platform", "")
     name = lead.get("name", "")
     url = lead.get("url", "")
+    social_notes: list[str] = []
 
     if not client.configured:
         _save({
@@ -72,7 +101,7 @@ def collect_for_lead(lead: dict[str, str]) -> None:
         tasks = [
             (
                 "FACEBOOK_GET_PAGE_DETAILS",
-                f'Using the connected Facebook Page account, retrieve public details for this business Page: {url}. The page name is "{name}". Return page name, category, description/about, website, location and other public business metadata available through the Page API. Do not modify anything.',
+                f'Using the connected Facebook Page account, retrieve public details for this business Page: {url}. The page name is "{name}". Return page name, category, description/about, website, location and other public business metadata available through the Page API. Read-only; do not modify anything.',
             ),
             (
                 "FACEBOOK_GET_PAGE_POSTS",
@@ -104,7 +133,11 @@ def collect_for_lead(lead: dict[str, str]) -> None:
             "raw_json": raw,
             "created_at": now_iso(),
         })
+        if status == "success" and summary:
+            social_notes.append(f"{tool}: {summary}")
         print(f"SOCIAL ENRICHMENT | platform={platform} | slot={lead.get('slot')} | tool={tool} | status={status} | target={url}")
+
+    _update_lead_context(run_id, url, social_notes)
 
 
 def enrich_run(run_id: str) -> int:
