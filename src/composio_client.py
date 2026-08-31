@@ -7,14 +7,18 @@ import requests
 class ComposioClient:
     """Composio v3.1 REST client for read/enrichment and future write actions."""
 
+    OFFICIAL_BASE_URL = "https://backend.composio.dev/api/v3.1"
+
     def __init__(self) -> None:
-        self.base_url = (os.getenv("COMPOSIO_BASE_URL") or "https://backend.composio.dev/api/v3.1").rstrip("/")
+        # Composio's documented REST endpoint is fixed for this hosted project.
+        # Do not allow an MCP/Connect URL or other dashboard URL to be injected here.
+        self.base_url = self.OFFICIAL_BASE_URL
         self.api_key = (os.getenv("COMPOSIO_PROJECT_API_KEY") or "").strip()
         self.connected_account_id = os.getenv("COMPOSIO_CONNECTED_ACCOUNT_ID", "").strip()
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url and self.api_key)
+        return bool(self.api_key)
 
     @staticmethod
     def _platform_from_tool(tool_slug: str) -> str:
