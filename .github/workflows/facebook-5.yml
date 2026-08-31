@@ -1,30 +1,22 @@
 name: ROZHAN Facebook 5
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '45 * * * *'
 permissions:
   contents: write
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Run Facebook slot 5
-        env:
-          LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
-          COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
-          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
-        run: python -m src.main --platform facebook --slot 5
+      - run: python -m src.main --platform facebook --slot 5
       - name: Save state
         run: |
           git config user.name "rozhanglobal-social-automation"
           git config user.email "actions@users.noreply.github.com"
-          git add data/ || true
-          git diff --cached --quiet || git commit -m "Update Facebook slot 5 state"
-          git push || true
+          git add data/
+          git diff --cached --quiet || git commit -m "Run Facebook slot 5"
+          git push
