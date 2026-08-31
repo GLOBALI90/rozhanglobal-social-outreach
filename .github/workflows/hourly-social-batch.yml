@@ -28,23 +28,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check discovery configuration
+      - name: Check AI and search configuration
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
         run: |
+          test -n "$GEMINI_API_KEY" || { echo "Missing required repository secret: GEMINI_API_KEY"; exit 1; }
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
 
-      - name: Run exactly 10 discovered records (5 Facebook + 5 LinkedIn)
+      - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
         env:
           LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
           YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
           SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
         run: python -m src.run_hourly_batch
 
-      - name: Validate discovered lead count
+      - name: Validate discovered lead count and targeting
         run: |
           python - <<'PY'
           import csv
@@ -56,10 +60,14 @@ jobs:
           counts = Counter(r.get('platform') for r in fresh)
           print('run_id=', run_id)
           print('lead_records=', len(fresh), 'facebook=', counts.get('facebook', 0), 'linkedin=', counts.get('linkedin', 0))
+          print('country=', sorted({r.get('country') for r in fresh}))
+          print('sectors=', sorted({r.get('sector') for r in fresh}))
           assert len(fresh) == 10, f'Expected 10 lead records, got {len(fresh)}'
           assert counts.get('facebook', 0) == 5, 'Expected 5 Facebook lead records'
           assert counts.get('linkedin', 0) == 5, 'Expected 5 LinkedIn lead records'
           assert all(r.get('url') for r in fresh), 'Every discovered lead must have a URL'
+          assert len({r.get('sector') for r in fresh}) == 1, 'One AI-selected sector should drive the hourly batch'
+          assert all(r.get('country') == 'China' for r in fresh), 'Target country must be China'
           PY
 
       - name: Save state
@@ -67,5 +75,5 @@ jobs:
           git config user.name "rozhanglobal-social-automation"
           git config user.email "actions@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "Update hourly social discovery state"
+          git diff --cached --quiet || git commit -m "Update AI-planned social discovery state"
           git push
