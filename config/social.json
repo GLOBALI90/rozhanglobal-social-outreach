@@ -5,12 +5,17 @@
     "linkedin": {"slots": 5, "hourly": true, "records_per_hour": 5},
     "facebook": {"slots": 5, "hourly": true, "records_per_hour": 5}
   },
+  "read_enrichment": {
+    "linkedin": ["LINKEDIN_GET_COMPANY_INFO"],
+    "facebook": ["FACEBOOK_GET_PAGE_DETAILS", "FACEBOOK_GET_PAGE_POSTS"]
+  },
   "actions": {
     "linkedin": ["find_target", "view_profile", "connect", "message", "follow"],
     "facebook": ["find_target", "view_profile", "message", "follow", "comment"]
   },
   "defaults": {
     "max_targets_per_slot": 1,
-    "dry_run": true
+    "dry_run": true,
+    "social_reads_are_live": true
   }
 }
