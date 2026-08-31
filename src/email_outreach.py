@@ -1,5 +1,4 @@
 import csv
-import html
 import json
 import os
 import re
@@ -15,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPANY = json.loads((ROOT / "config/company.json").read_text(encoding="utf-8"))
 LEADS = ROOT / "data/social_leads.csv"
 OUTREACH = ROOT / "data/social_outreach.csv"
+ACTIVITY = ROOT / "data/social_activity.csv"
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
@@ -42,6 +42,23 @@ def _load_sent() -> set[str]:
             return {str(r.get("recipient_email", "")).strip().lower() for r in csv.DictReader(f) if r.get("status") == "sent"}
     except Exception:
         return set()
+
+
+def _load_social_context(run_id: str, target_url: str) -> str:
+    if not ACTIVITY.exists():
+        return "No Composio social activity was available."
+    notes: list[str] = []
+    try:
+        with ACTIVITY.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("run_id") == run_id and row.get("target_url") == target_url and row.get("status") == "success":
+                    summary = str(row.get("summary", "")).strip()
+                    tool = str(row.get("tool", "")).strip()
+                    if summary:
+                        notes.append(f"{tool}: {summary}")
+    except Exception:
+        return "No Composio social activity was available."
+    return " | ".join(notes)[:14000] if notes else "No successful Composio social activity was available."
 
 
 def _save(row: dict[str, str]) -> None:
@@ -81,7 +98,6 @@ def _extract_emails(url: str) -> tuple[str, str]:
 
 
 def _find_company_website(target_name: str, country: str, sector: str) -> str:
-    """Search for a likely official company website using You.com, without guessing."""
     key = os.getenv("YOU_API_KEY", "").strip()
     if not key or not target_name:
         return ""
@@ -148,10 +164,12 @@ Industry: {lead.get('sector', '')}
 Region: {lead.get('region', '')}
 Industrial zone: {lead.get('industrial_zone', '')}
 Official website found (only if verified): {company_website or 'not found'}
-Social/search context: {social_context}
+Search context: {lead.get('title', '')}. {lead.get('snippet', '')}
+Composio social context: {social_context}
 
 Rules:
 - Use only facts present above; do not invent purchase volumes, current contracts, product requirements, certifications, prices, or personal facts.
+- Prefer concrete references to verified company activity from the social context when available.
 - Show that ROZHAN GLOBAL can supply and source competitive international materials relevant to the target's visible business activity.
 - Ask what materials/products they currently source or import and whether they are open to a quotation or supplier comparison.
 - Mention supply continuity and competitive sourcing naturally, not as an exaggerated claim.
@@ -175,7 +193,9 @@ def _generate_with_gemini(prompt: str) -> tuple[dict[str, str] | None, str]:
             timeout=45,
         )
         r.raise_for_status()
-        text = r.json()["choices"]["message"]["content"] if isinstance(r.json().get("choices"), dict) else r.json()["choices"][0]["message"]["content"]
+        payload = r.json()
+        choices = payload.get("choices") or []
+        text = choices[0]["message"]["content"] if choices else ""
         return _parse_json(text), f"gemini:{model}"
     except Exception as exc:
         print(f"Gemini email generation failed: {exc}")
@@ -205,8 +225,8 @@ def _generate_with_cloudflare(prompt: str) -> tuple[dict[str, str] | None, str]:
         return None, ""
 
 
-def generate_email(lead: dict[str, str], website: str) -> tuple[dict[str, str] | None, str]:
-    prompt = _prompt(lead, website, f"{lead.get('title', '')}. {lead.get('snippet', '')}")
+def generate_email(lead: dict[str, str], website: str, social_context: str) -> tuple[dict[str, str] | None, str]:
+    prompt = _prompt(lead, website, social_context)
     result, provider = _generate_with_gemini(prompt)
     if result:
         return result, provider
@@ -221,7 +241,6 @@ def _send(to: str, subject: str, body: str) -> tuple[bool, str]:
     password = os.getenv("GMAIL_APP_PASSWORD", "").strip().replace(" ", "")
     if not username or not password:
         return False, "missing_gmail_credentials"
-
     message = EmailMessage()
     message["From"] = username
     message["To"] = to
@@ -244,7 +263,6 @@ def process_run(run_id: str) -> None:
     sent = _load_sent()
     with LEADS.open(encoding="utf-8") as f:
         leads = [r for r in csv.DictReader(f) if r.get("run_id") == run_id]
-
     send_enabled = os.getenv("SEND_EMAILS", "false").strip().lower() == "true"
     max_sends = int(os.getenv("MAX_EMAILS_PER_RUN", "10"))
     sends = 0
@@ -252,6 +270,7 @@ def process_run(run_id: str) -> None:
     for lead in leads:
         name = lead.get("name", "").strip()
         target_url = lead.get("url", "").strip()
+        social_context = _load_social_context(run_id, target_url)
         website = _find_company_website(name, lead.get("country", "China"), lead.get("sector", ""))
         email, source = _extract_emails(website)
         base = {
@@ -275,7 +294,7 @@ def process_run(run_id: str) -> None:
             base["status"] = "already_contacted"
             _save(base)
             continue
-        generated, provider = generate_email(lead, website)
+        generated, provider = generate_email(lead, website, social_context)
         if not generated:
             base["status"] = "ai_generation_failed"
             _save(base)
