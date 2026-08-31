@@ -8,7 +8,6 @@ from urllib.parse import quote_plus, unquote
 import requests
 
 from .ai_planner import plan
-from .composio_client import ComposioClient
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
@@ -67,48 +66,17 @@ def _you_search(query: str) -> list[dict[str, str]]:
     return out
 
 
-def _composio_facebook_search(query: str) -> list[dict[str, str]]:
-    client = ComposioClient()
-    if not client.configured:
-        return []
-    task = (
-        f'Search Facebook Pages using the connected Facebook account for public business/company Pages relevant to this query: {query}. '
-        'Return only public business/company Pages with name, Page URL and short public description when available. '
-        'Read-only. Do not send messages, comment, like, follow, publish or modify anything.'
-    )
-    try:
-        result = client.execute_tool("FACEBOOK_SEARCH_PAGES", text=task, version="latest")
-    except Exception as exc:
-        print(f"Composio Facebook Page search failed: {exc}")
-        return []
-    data = result.get("data", {}) if isinstance(result, dict) else {}
-    raw = data.get("response", data) if isinstance(data, dict) else data
-    out: list[dict[str, str]] = []
-    def walk(value: Any) -> None:
-        if len(out) >= 15:
-            return
-        if isinstance(value, dict):
-            url = str(value.get("url", value.get("link", value.get("page_url", "")))).strip()
-            if "facebook.com/" in url.lower():
-                out.append({"title": str(value.get("name", value.get("title", ""))).strip(), "url": url, "snippet": str(value.get("description", value.get("about", ""))).strip()})
-            for child in value.values():
-                walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                walk(child)
-        elif isinstance(value, str):
-            for match in re.finditer(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", value):
-                out.append({"title": "", "url": match.group(0).rstrip(".,);]"), "snippet": ""})
-    walk(raw)
-    return out
-
-
 def _searx_search(query: str) -> list[dict[str, str]]:
     base = os.getenv("SEARXNG_URL", "").strip().rstrip("/")
     if not base or "your-searx-instance.example" in base:
         return []
     try:
-        response = requests.get(f"{base}/search", params={"q": query, "format": "json"}, headers=HEADERS, timeout=30)
+        response = requests.get(
+            f"{base}/search",
+            params={"q": query, "format": "json"},
+            headers=HEADERS,
+            timeout=30,
+        )
         response.raise_for_status()
         data = response.json()
     except Exception as exc:
@@ -198,14 +166,8 @@ def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None
         if query in seen_queries or len(collected) >= limit:
             continue
         seen_queries.add(query)
-        results: list[dict[str, str]] = []
-        provider = ""
-        if platform == "facebook":
-            results = _composio_facebook_search(query)
-            provider = "Composio Facebook"
-        if not results:
-            results = _you_search(query)
-            provider = "You.com"
+        results = _you_search(query)
+        provider = "You.com"
         if not results:
             results = _searx_search(query)
             provider = "SearXNG"
