@@ -27,23 +27,34 @@ def _you_search(query: str) -> list[dict[str, str]]:
     key = os.getenv("YOU_API_KEY", "")
     if not key:
         return []
+    url = os.getenv("YOU_SEARCH_URL", "https://ydc-index.io/v1/search")
     try:
-        r = requests.get(
-            os.getenv("YOU_SEARCH_URL", "https://api.you.com/v1/search"),
-            headers={"X-API-Key": key, "Accept": "application/json"},
-            params={"query": query}, timeout=30,
+        r = requests.post(
+            url,
+            headers={"X-API-Key": key, "Content-Type": "application/json", "Accept": "application/json"},
+            json={"query": query, "count": 10, "safesearch": "moderate", "language": "en"},
+            timeout=30,
         )
         r.raise_for_status()
         data: Any = r.json()
     except Exception as exc:
         print(f"You.com search failed: {exc}")
         return []
-    return [
-        {"title": str(x.get("title", "")), "url": str(x.get("url", x.get("link", ""))),
-         "snippet": str(x.get("description", x.get("snippet", "")))}
-        for x in (data.get("results", []) if isinstance(data, dict) else [])
-        if isinstance(x, dict)
-    ]
+
+    results = data.get("results", {}) if isinstance(data, dict) else {}
+    items = results.get("web", []) if isinstance(results, dict) else (results if isinstance(results, list) else [])
+    out: list[dict[str, str]] = []
+    for x in items:
+        if not isinstance(x, dict):
+            continue
+        snippets = x.get("snippets", [])
+        snippet = snippets[0] if isinstance(snippets, list) and snippets else x.get("description", "")
+        out.append({
+            "title": str(x.get("title", "")),
+            "url": str(x.get("url", x.get("link", ""))),
+            "snippet": str(snippet or ""),
+        })
+    return out
 
 
 def _searx_search(query: str) -> list[dict[str, str]]:
