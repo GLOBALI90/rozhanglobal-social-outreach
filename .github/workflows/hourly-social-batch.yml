@@ -28,7 +28,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run exactly 10 records (5 Facebook + 5 LinkedIn)
+      - name: Check discovery configuration
+        env:
+          YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
+        run: |
+          test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
+
+      - name: Run exactly 10 discovered records (5 Facebook + 5 LinkedIn)
         env:
           LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
@@ -38,20 +44,22 @@ jobs:
           SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
         run: python -m src.run_hourly_batch
 
-      - name: Validate hourly record count
+      - name: Validate discovered lead count
         run: |
           python - <<'PY'
           import csv
           from collections import Counter
-          rows = list(csv.DictReader(open('data/social_actions.csv', encoding='utf-8')))
+          with open('data/social_leads.csv', encoding='utf-8') as f:
+              rows = list(csv.DictReader(f))
           run_id = '${{ github.run_id }}'
           fresh = [r for r in rows if r.get('run_id') == run_id]
           counts = Counter(r.get('platform') for r in fresh)
           print('run_id=', run_id)
-          print('records=', len(fresh), 'facebook=', counts.get('facebook', 0), 'linkedin=', counts.get('linkedin', 0))
-          assert len(fresh) == 10, f'Expected 10 records, got {len(fresh)}'
-          assert counts.get('facebook', 0) == 5, 'Expected 5 Facebook records'
-          assert counts.get('linkedin', 0) == 5, 'Expected 5 LinkedIn records'
+          print('lead_records=', len(fresh), 'facebook=', counts.get('facebook', 0), 'linkedin=', counts.get('linkedin', 0))
+          assert len(fresh) == 10, f'Expected 10 lead records, got {len(fresh)}'
+          assert counts.get('facebook', 0) == 5, 'Expected 5 Facebook lead records'
+          assert counts.get('linkedin', 0) == 5, 'Expected 5 LinkedIn lead records'
+          assert all(r.get('url') for r in fresh), 'Every discovered lead must have a URL'
           PY
 
       - name: Save state
@@ -59,5 +67,5 @@ jobs:
           git config user.name "rozhanglobal-social-automation"
           git config user.email "actions@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "Update hourly social batch state"
+          git diff --cached --quiet || git commit -m "Update hourly social discovery state"
           git push
