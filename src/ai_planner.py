@@ -10,7 +10,10 @@ COMPANY = json.loads((ROOT / "config/company.json").read_text(encoding="utf-8"))
 LEADS = ROOT / "data/social_leads.csv"
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-DEFAULT_MODEL = "gemini-2.5-flash"
+GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+CLOUDFLARE_URL_TEMPLATE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+CLOUDFLARE_DEFAULT_MODEL = "@cf/zai-org/glm-4.7-flash"
+
 SECTORS = [
     "Petroleum products",
     "Chemicals",
@@ -76,41 +79,34 @@ def fallback_plan() -> dict[str, object]:
     region = REGIONS[run_number % len(REGIONS)]
     zone = INDUSTRIAL_ZONES[run_number % len(INDUSTRIAL_ZONES)]
     return {
+        "provider": "deterministic-fallback",
         "country": COUNTRY,
         "sector": sector,
         "region": region,
         "industrial_zone": zone,
         "queries": [
-            f"site:linkedin.com/company {COUNTRY} {region} {sector} procurement purchasing sourcing manufacturer importer",
-            f"site:facebook.com {COUNTRY} {zone} {sector} company manufacturer distributor importer",
+            f"site:linkedin.com/company {COUNTRY} {region} {sector} procurement purchasing sourcing manufacturer importer -jobs -careers -recruitment",
+            f"site:facebook.com {COUNTRY} {zone} {sector} company manufacturer distributor importer -jobs -careers",
             f"{COUNTRY} {region} {sector} industrial buyer procurement factory importer company -jobs -careers -article -blog -directory",
+            f"{COUNTRY} {zone} industrial park {sector} manufacturer procurement factory company -jobs -careers -directory",
         ],
     }
 
 
-def plan() -> dict[str, object]:
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    used = existing_urls_and_names()
-    used_text = "\n".join(used[-150:]) or "NONE"
-
-    if not key:
-        print("AI planner: GEMINI_API_KEY missing; using deterministic rotation fallback")
-        return fallback_plan()
-
-    prompt = f"""You are ROZHAN GLOBAL's B2B social-lead search planner.
+def build_prompt(used_text: str) -> str:
+    return f"""You are ROZHAN GLOBAL's B2B social-lead search planner.
 Company: {COMPANY.get('brand', 'ROZHAN GLOBAL')}
-Business: {COMPANY.get('positioning', 'international sourcing and cross-border procurement')}
+Business positioning: {COMPANY.get('positioning', 'international sourcing and cross-border procurement')}
 TARGET COUNTRY: {COUNTRY} only.
 CORE INDUSTRIES: {', '.join(SECTORS)}.
 TARGET BUYERS: direct buyers, industrial consumers, importers, manufacturers, procurement/purchasing/sourcing teams, factories and raw-material consumers.
 
-Design the NEXT hourly discovery batch. The batch must produce NEW companies/pages, not duplicates from prior runs.
-Choose one primary industry and one geographic/industrial-cluster focus for this run.
-Favor real operating companies/pages and buyer intent.
-Use both platforms, but do NOT search for individual private people. For LinkedIn prefer company pages; for Facebook prefer public company/business Pages.
+Design the NEXT hourly discovery batch. It must produce NEW companies/pages and avoid every URL/name already collected.
+Choose one primary industry and one geographic/industrial-cluster focus for this run. Rotate the focus so repeated hourly runs explore different Chinese regions, cities and industrial clusters.
+Use both platforms, but do NOT search for private individuals. For LinkedIn prefer public company pages. For Facebook prefer public company/business Pages.
 Use industrial parks, development zones, chemical parks, steel/manufacturing clusters and factory districts where relevant.
-Never use jobs, recruitment, careers, articles, blogs, news, generic directories, lead-list vendors, marketplaces, courses, webinars or social posts as the lead itself.
+Never use jobs, recruitment, careers, articles, blogs, news, generic directories, lead-list vendors, marketplaces, courses, webinars, social posts or individual profiles as the lead itself.
+Prefer real operating companies with buyer/procurement relevance.
 
 Previously collected URLs/names to avoid:
 {used_text}
@@ -119,41 +115,95 @@ Return ONLY valid JSON with this exact structure:
 {{
   "country": "{COUNTRY}",
   "sector": "one of the core industries",
-  "region": "specific region/city/industrial zone focus",
+  "region": "specific region/city/industrial cluster focus",
   "industrial_zone": "specific zone/cluster or empty string",
   "queries": ["query 1", "query 2", "query 3", "query 4"]
 }}
-Queries must be concise web searches. At least one must explicitly target LinkedIn company pages and one Facebook public business pages. Include strong negative terms where useful."""
+Queries must be concise web searches. At least one MUST explicitly target LinkedIn company pages and at least one MUST target Facebook public business pages. Include strong negative terms where useful."""
 
+
+def parse_plan(text: str, provider: str) -> dict[str, object] | None:
+    text = (text or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    result = json.loads(text[start : end + 1])
+    queries = [str(q).strip() for q in result.get("queries", []) if str(q).strip()]
+    if len(queries) < 4:
+        return None
+    result["provider"] = provider
+    result["country"] = COUNTRY
+    result["queries"] = queries[:4]
+    return result
+
+
+def call_gemini(prompt: str) -> dict[str, object] | None:
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        print("AI planner: Gemini key missing")
+        return None
+    model = os.getenv("GEMINI_MODEL", GEMINI_DEFAULT_MODEL).strip() or GEMINI_DEFAULT_MODEL
     try:
         response = requests.post(
             GEMINI_URL,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={
                 "model": model,
-                "temperature": 0.25,
+                "temperature": 0.2,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=45,
         )
         response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        start, end = text.find("{"), text.rfind("}")
-        if start >= 0 and end > start:
-            result = json.loads(text[start : end + 1])
-            queries = [str(q).strip() for q in result.get("queries", []) if str(q).strip()]
-            if len(queries) >= 4:
-                result["country"] = COUNTRY
-                result["queries"] = queries[:4]
-                print(
-                    f"AI planner: sector={result.get('sector')} | region={result.get('region')} | "
-                    f"zone={result.get('industrial_zone')} | queries={len(queries[:4])}"
-                )
-                return result
+        text = response.json()["choices"][0]["message"]["content"]
+        result = parse_plan(text, f"gemini:{model}")
+        if result:
+            print(f"AI planner: Gemini primary succeeded | model={model}")
+        return result
     except Exception as exc:
-        print(f"AI planner failed: {exc}; using deterministic rotation fallback")
+        print(f"AI planner: Gemini primary failed: {exc}")
+        return None
 
+
+def call_cloudflare(prompt: str) -> dict[str, object] | None:
+    token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    if not token or not account_id:
+        print("AI planner: Cloudflare fallback credentials missing")
+        return None
+    model = os.getenv("CLOUDFLARE_AI_MODEL", CLOUDFLARE_DEFAULT_MODEL).strip() or CLOUDFLARE_DEFAULT_MODEL
+    url = CLOUDFLARE_URL_TEMPLATE.format(account_id=account_id, model=model)
+    try:
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"prompt": prompt, "max_tokens": 1200, "temperature": 0.2},
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json().get("result", {})
+        text = payload.get("response", "") if isinstance(payload, dict) else str(payload)
+        result = parse_plan(text, f"cloudflare:{model}")
+        if result:
+            print(f"AI planner: Cloudflare fallback succeeded | model={model}")
+        return result
+    except Exception as exc:
+        print(f"AI planner: Cloudflare fallback failed: {exc}")
+        return None
+
+
+def plan() -> dict[str, object]:
+    used = existing_urls_and_names()
+    used_text = "\n".join(used[-200:]) or "NONE"
+    prompt = build_prompt(used_text)
+
+    result = call_gemini(prompt)
+    if result:
+        return result
+
+    result = call_cloudflare(prompt)
+    if result:
+        return result
+
+    print("AI planner: both AI providers unavailable; using deterministic rotation fallback")
     return fallback_plan()
