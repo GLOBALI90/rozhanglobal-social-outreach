@@ -15,7 +15,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,17 +28,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check AI and search configuration
+      - name: Check AI, search and Gmail configuration
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
+          GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           test -n "$GEMINI_API_KEY" || { echo "Missing required repository secret: GEMINI_API_KEY"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing required repository secret: CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing required repository secret: CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
+          test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
+          test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
 
       - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
         env:
@@ -77,10 +81,25 @@ jobs:
           assert all(r.get('country') == 'China' for r in fresh), 'Target country must be China'
           PY
 
+      - name: Generate personalized outreach and send eligible business emails
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_MODEL: ${{ secrets.CLOUDFLARE_AI_MODEL }}
+          YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
+          YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
+          GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SEND_EMAILS: 'false'
+          MAX_EMAILS_PER_RUN: '10'
+        run: python -c "from src.email_outreach import process_run; import os; process_run(os.environ['GITHUB_RUN_ID'])"
+
       - name: Save state
         run: |
           git config user.name "rozhanglobal-social-automation"
           git config user.email "actions@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "Update AI-planned social discovery state"
+          git diff --cached --quiet || git commit -m "Update social discovery and outreach state"
           git push
