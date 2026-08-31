@@ -37,6 +37,8 @@ jobs:
           COMPOSIO_PROJECT_API_KEY: ${{ secrets.COMPOSIO_PROJECT_API_KEY }}
           COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
           COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
+          COMPOSIO_FACEBOOK_USER_ID: ${{ secrets.COMPOSIO_FACEBOOK_USER_ID }}
+          COMPOSIO_LINKEDIN_USER_ID: ${{ secrets.COMPOSIO_LINKEDIN_USER_ID }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
@@ -49,6 +51,8 @@ jobs:
           case "$COMPOSIO_PROJECT_API_KEY" in ck_*) echo "COMPOSIO_PROJECT_API_KEY must be a Project API key (not a ck_ consumer/MCP key)."; exit 1;; esac
           test -n "$COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID"; exit 1; }
           test -n "$COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID"; exit 1; }
+          test -n "$COMPOSIO_FACEBOOK_USER_ID" || { echo "Missing required repository secret: COMPOSIO_FACEBOOK_USER_ID"; exit 1; }
+          test -n "$COMPOSIO_LINKEDIN_USER_ID" || { echo "Missing required repository secret: COMPOSIO_LINKEDIN_USER_ID"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
           test "$GMAIL_USERNAME" = "saberi.export.import@gmail.com" || { echo "GMAIL_USERNAME must be saberi.export.import@gmail.com"; exit 1; }
@@ -60,6 +64,8 @@ jobs:
           COMPOSIO_PROJECT_API_KEY: ${{ secrets.COMPOSIO_PROJECT_API_KEY }}
           COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
           COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
+          COMPOSIO_FACEBOOK_USER_ID: ${{ secrets.COMPOSIO_FACEBOOK_USER_ID }}
+          COMPOSIO_LINKEDIN_USER_ID: ${{ secrets.COMPOSIO_LINKEDIN_USER_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -98,10 +104,8 @@ jobs:
           statuses = Counter(r.get('status') for r in activity)
           print('social_activity_statuses=', dict(statuses))
           assert activity, 'No social activity records were produced'
-          # A public target may not be readable by the provider API even with a valid
-          # connected account. Treat those cases as explicit fallback-required records.
-          acceptable = {'success', 'fallback_required'}
-          unexpected = [r for r in activity if r.get('status') not in acceptable and r.get('status') != 'error']
+          acceptable = {'success', 'fallback_required', 'error'}
+          unexpected = [r for r in activity if r.get('status') not in acceptable]
           assert not unexpected, f'Unexpected social activity statuses: {unexpected[:3]}'
           PY
 
