@@ -35,7 +35,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
-          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          COMPOSIO_PROJECT_API_KEY: ${{ secrets.COMPOSIO_PROJECT_API_KEY }}
           COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
           COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
@@ -47,7 +47,8 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing required repository secret: CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
           test -n "$COMPOSIO_BASE_URL" || { echo "Missing required repository secret: COMPOSIO_BASE_URL"; exit 1; }
-          test -n "$COMPOSIO_API_KEY" || { echo "Missing required repository secret: COMPOSIO_API_KEY"; exit 1; }
+          test -n "$COMPOSIO_PROJECT_API_KEY" || { echo "Missing required repository secret: COMPOSIO_PROJECT_API_KEY"; exit 1; }
+          case "$COMPOSIO_PROJECT_API_KEY" in ck_*) echo "COMPOSIO_PROJECT_API_KEY must be a Project API key (not a ck_ consumer/MCP key)."; exit 1;; esac
           test -n "$COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID"; exit 1; }
           test -n "$COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
@@ -59,7 +60,7 @@ jobs:
         env:
           LIVE_MODE: 'false'
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
-          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          COMPOSIO_PROJECT_API_KEY: ${{ secrets.COMPOSIO_PROJECT_API_KEY }}
           COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
           COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
