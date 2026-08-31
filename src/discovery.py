@@ -125,8 +125,10 @@ def _clean(results: list[dict[str, str]], platform: str, history: set[str]) -> l
     return cleaned
 
 
-def discover(platform: str, limit: int = 5) -> tuple[list[dict[str, str]], dict[str, object]]:
-    planner = plan()
+def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None = None) -> tuple[list[dict[str, str]], dict[str, object]]:
+    if platform not in {"facebook", "linkedin"}:
+        raise ValueError(f"Unsupported platform: {platform}")
+    planner = planner or plan()
     history = _history()
     queries = [str(q).strip() for q in planner.get("queries", []) if str(q).strip()]
     collected: list[dict[str, str]] = []
