@@ -36,6 +36,8 @@ jobs:
           YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
+          COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
@@ -46,6 +48,8 @@ jobs:
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
           test -n "$COMPOSIO_BASE_URL" || { echo "Missing required repository secret: COMPOSIO_BASE_URL"; exit 1; }
           test -n "$COMPOSIO_API_KEY" || { echo "Missing required repository secret: COMPOSIO_API_KEY"; exit 1; }
+          test -n "$COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID"; exit 1; }
+          test -n "$COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID" || { echo "Missing required repository secret: COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
           test "$GMAIL_USERNAME" = "saberi.export.import@gmail.com" || { echo "GMAIL_USERNAME must be saberi.export.import@gmail.com"; exit 1; }
@@ -53,10 +57,11 @@ jobs:
 
       - name: Run AI-planned discovery and Composio social enrichment (5 Facebook + 5 LinkedIn)
         env:
-          LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
+          LIVE_MODE: 'false'
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
-          COMPOSIO_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_CONNECTED_ACCOUNT_ID }}
+          COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID }}
+          COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID: ${{ secrets.COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -92,8 +97,10 @@ jobs:
           with open('data/social_activity.csv', encoding='utf-8') as f:
               activity = [r for r in csv.DictReader(f) if r.get('run_id') == run_id]
           print('social_activity_records=', len(activity))
-          print('composio_successes=', sum(1 for r in activity if r.get('status') == 'success'))
+          successes = [r for r in activity if r.get('status') == 'success']
+          print('composio_successes=', len(successes))
           assert activity, 'No Composio social enrichment records were produced'
+          assert successes, 'No Composio read succeeded; stop before trusting social data'
           PY
 
       - name: Generate personalized emails and send eligible business emails
