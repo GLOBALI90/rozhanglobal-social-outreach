@@ -16,6 +16,23 @@ class ComposioClient:
     def configured(self) -> bool:
         return bool(self.base_url and self.api_key)
 
+    @staticmethod
+    def _platform_from_tool(tool_slug: str) -> str:
+        slug = tool_slug.upper()
+        if slug.startswith("FACEBOOK_"):
+            return "facebook"
+        if slug.startswith("LINKEDIN_"):
+            return "linkedin"
+        return ""
+
+    def _resolve_account_from_env(self, tool_slug: str) -> str:
+        platform = self._platform_from_tool(tool_slug)
+        if platform == "facebook":
+            return os.getenv("COMPOSIO_FACEBOOK_CONNECTED_ACCOUNT_ID", "").strip()
+        if platform == "linkedin":
+            return os.getenv("COMPOSIO_LINKEDIN_CONNECTED_ACCOUNT_ID", "").strip()
+        return ""
+
     def execute_tool(
         self,
         tool_slug: str,
@@ -25,20 +42,14 @@ class ComposioClient:
         connected_account_id: str | None = None,
         version: str = "latest",
     ) -> dict[str, Any]:
-        """Execute a Composio tool.
-
-        If no connected account ID is supplied, Composio uses the project's
-        default connected account as documented by the v3.1 API. This avoids a
-        separate connected-account lookup request and prevents the prior 401
-        failure from blocking every social read.
-        """
+        """Execute a Composio tool using an explicit connected account when configured."""
         if not self.configured:
             return {"status": "not_configured", "tool": tool_slug}
         if (arguments is None) == (text is None):
             raise ValueError("Pass exactly one of arguments or text")
 
         payload: dict[str, Any] = {"version": version}
-        account = connected_account_id or self.connected_account_id
+        account = connected_account_id or self._resolve_account_from_env(tool_slug) or self.connected_account_id
         if account:
             payload["connected_account_id"] = account
         if arguments is not None:
@@ -57,12 +68,7 @@ class ComposioClient:
         except Exception:
             data = {"raw": response.text}
         if not response.ok:
-            return {
-                "status": "error",
-                "tool": tool_slug,
-                "http_status": response.status_code,
-                "error": data,
-            }
+            return {"status": "error", "tool": tool_slug, "http_status": response.status_code, "error": data}
         return {"status": "success", "tool": tool_slug, "data": data}
 
     def execute(self, action: str, payload: dict[str, Any], *, live_mode: bool) -> dict[str, Any]:
