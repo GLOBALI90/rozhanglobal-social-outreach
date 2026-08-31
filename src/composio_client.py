@@ -1,5 +1,6 @@
 import os
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 
@@ -15,6 +16,28 @@ class ComposioClient:
     @property
     def configured(self) -> bool:
         return bool(self.base_url and self.api_key)
+
+    def resolve_connected_account(self, toolkit_slug: str) -> str:
+        """Pick the first ACTIVE connected account for a toolkit unless explicitly configured."""
+        if self.connected_account_id or not self.configured:
+            return self.connected_account_id
+        params = urlencode({"toolkit_slugs": toolkit_slug, "statuses": "ACTIVE", "limit": 20})
+        try:
+            response = requests.get(
+                f"{self.base_url}/connected_accounts?{params}",
+                headers={"x-api-key": self.api_key},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("items", []) if isinstance(data, dict) else []
+            if items:
+                account_id = str(items[0].get("id", "")).strip()
+                if account_id:
+                    return account_id
+        except Exception as exc:
+            print(f"Composio connected account lookup failed for {toolkit_slug}: {exc}")
+        return ""
 
     def execute_tool(
         self,
@@ -32,6 +55,9 @@ class ComposioClient:
 
         payload: dict[str, Any] = {"version": version}
         account = connected_account_id or self.connected_account_id
+        if not account:
+            toolkit_slug = tool_slug.split("_", 1)[0].lower()
+            account = self.resolve_connected_account(toolkit_slug)
         if account:
             payload["connected_account_id"] = account
         if arguments is not None:
