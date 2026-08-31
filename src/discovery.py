@@ -1,23 +1,24 @@
 import os
+import re
 from typing import Any
+from urllib.parse import quote_plus, unquote
 
 import requests
 
-
 DEFAULT_QUERIES = {
     "linkedin": [
-        "site:linkedin.com/company chemical distributor procurement manager petroleum products",
+        "site:linkedin.com/company chemical distributor procurement petroleum products",
         "site:linkedin.com/company petrochemical buyer industrial chemicals steel procurement",
         "site:linkedin.com/company chemical trading company purchasing sourcing",
         "site:linkedin.com/company steel manufacturer procurement raw materials",
         "site:linkedin.com/company oil gas chemicals importer distributor",
     ],
     "facebook": [
-        "chemical distributor company",
-        "petrochemical trading company",
-        "industrial chemicals importer distributor",
-        "steel manufacturer procurement",
-        "oil gas equipment chemicals distributor",
+        "site:facebook.com chemical distributor company",
+        "site:facebook.com petrochemical trading company",
+        "site:facebook.com industrial chemicals importer distributor",
+        "site:facebook.com steel manufacturer procurement",
+        "site:facebook.com oil gas chemicals distributor",
     ],
 }
 
@@ -26,31 +27,23 @@ def _you_search(query: str) -> list[dict[str, str]]:
     key = os.getenv("YOU_API_KEY", "")
     if not key:
         return []
-    url = os.getenv("YOU_SEARCH_URL", "https://api.you.com/v1/search")
     try:
         r = requests.get(
-            url,
+            os.getenv("YOU_SEARCH_URL", "https://api.you.com/v1/search"),
             headers={"X-API-Key": key, "Accept": "application/json"},
-            params={"query": query},
-            timeout=30,
+            params={"query": query}, timeout=30,
         )
         r.raise_for_status()
         data: Any = r.json()
     except Exception as exc:
         print(f"You.com search failed: {exc}")
         return []
-
-    results = data.get("results", []) if isinstance(data, dict) else []
-    out: list[dict[str, str]] = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        out.append({
-            "title": str(item.get("title", "")),
-            "url": str(item.get("url", item.get("link", ""))),
-            "snippet": str(item.get("description", item.get("snippet", ""))),
-        })
-    return out
+    return [
+        {"title": str(x.get("title", "")), "url": str(x.get("url", x.get("link", ""))),
+         "snippet": str(x.get("description", x.get("snippet", "")))}
+        for x in (data.get("results", []) if isinstance(data, dict) else [])
+        if isinstance(x, dict)
+    ]
 
 
 def _searx_search(query: str) -> list[dict[str, str]]:
@@ -58,52 +51,59 @@ def _searx_search(query: str) -> list[dict[str, str]]:
     if not base:
         return []
     try:
-        r = requests.get(
-            f"{base}/search",
-            params={"q": query, "format": "json"},
-            timeout=30,
-        )
+        r = requests.get(f"{base}/search", params={"q": query, "format": "json"}, timeout=30)
         r.raise_for_status()
         data = r.json()
     except Exception as exc:
         print(f"SearXNG search failed: {exc}")
         return []
+    return [
+        {"title": str(x.get("title", "")), "url": str(x.get("url", "")), "snippet": str(x.get("content", ""))}
+        for x in data.get("results", []) if isinstance(x, dict)
+    ]
+
+
+def _duckduckgo_search(query: str) -> list[dict[str, str]]:
+    try:
+        r = requests.get(
+            f"https://html.duckduckgo.com/html/?q={quote_plus(query)}",
+            headers={"User-Agent": "Mozilla/5.0 ROZHAN-Lead-Discovery/1.0"}, timeout=30,
+        )
+        r.raise_for_status()
+    except Exception as exc:
+        print(f"DuckDuckGo search failed: {exc}")
+        return []
     out: list[dict[str, str]] = []
-    for item in data.get("results", []):
-        if isinstance(item, dict):
-            out.append({
-                "title": str(item.get("title", "")),
-                "url": str(item.get("url", "")),
-                "snippet": str(item.get("content", "")),
-            })
+    for m in re.finditer(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', r.text, re.I | re.S):
+        href = unquote(m.group(1))
+        uddg = re.search(r"uddg=([^&]+)", href)
+        if uddg:
+            href = unquote(uddg.group(1))
+        title = re.sub(r"<.*?>", "", m.group(2)).strip()
+        out.append({"title": title, "url": href, "snippet": ""})
     return out
 
 
 def _clean(results: list[dict[str, str]], platform: str) -> list[dict[str, str]]:
-    bad = ("/posts/", "/jobs/", "/events/", "/blog/", "/article/", "/search?")
+    bad = ("/posts/", "/jobs/", "/events/", "/blog/", "/article/", "/search?", "/groups/")
+    required = "linkedin.com/company/" if platform == "linkedin" else "facebook.com/"
     seen: set[str] = set()
     cleaned: list[dict[str, str]] = []
     for item in results:
-        url = item.get("url", "").strip()
-        if not url or url in seen or any(x in url.lower() for x in bad):
-            continue
-        if platform == "linkedin" and "linkedin.com" not in url.lower():
+        url = re.sub(r"#.*$", "", item.get("url", "").strip())
+        low = url.lower()
+        if not url or url in seen or required not in low or any(x in low for x in bad):
             continue
         seen.add(url)
-        cleaned.append(item)
+        cleaned.append({**item, "url": url})
     return cleaned
 
 
 def discover(platform: str, limit: int = 5) -> list[dict[str, str]]:
     collected: list[dict[str, str]] = []
-    queries = DEFAULT_QUERIES[platform]
-    for query in queries:
-        batch = _you_search(query)
-        if not batch:
-            batch = _searx_search(query)
-        collected.extend(batch)
-        collected = _clean(collected, platform)
+    for query in DEFAULT_QUERIES[platform]:
+        batch = _you_search(query) or _searx_search(query) or _duckduckgo_search(query)
+        collected = _clean(collected + batch, platform)
         if len(collected) >= limit:
             break
-
     return collected[:limit]
