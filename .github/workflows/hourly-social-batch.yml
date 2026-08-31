@@ -44,7 +44,7 @@ jobs:
           test -n "$YOU_API_KEY" || { echo "Missing required repository secret: YOU_API_KEY"; exit 1; }
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
-          test "$GMAIL_USERNAME" = "info@rojanglobal.com" || { echo "GMAIL_USERNAME must be info@rojanglobal.com"; exit 1; }
+          test "$GMAIL_USERNAME" = "saberi.export.import@gmail.com" || { echo "GMAIL_USERNAME must be saberi.export.import@gmail.com"; exit 1; }
           test "$SEND_EMAILS" = "true" || { echo "SEND_EMAILS must be exactly true for this live-send workflow"; exit 1; }
 
       - name: Run AI-planned discovery (5 Facebook + 5 LinkedIn)
