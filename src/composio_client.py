@@ -9,7 +9,7 @@ class ComposioClient:
 
     def __init__(self) -> None:
         self.base_url = (os.getenv("COMPOSIO_BASE_URL") or "https://backend.composio.dev/api/v3.1").rstrip("/")
-        self.api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+        self.api_key = (os.getenv("COMPOSIO_PROJECT_API_KEY") or "").strip()
         self.connected_account_id = os.getenv("COMPOSIO_CONNECTED_ACCOUNT_ID", "").strip()
 
     @property
