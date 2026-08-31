@@ -1,15 +1,16 @@
 {
   "live_mode": false,
+  "hourly_batch_records": 10,
   "platforms": {
-    "linkedin": {"slots": 5, "hourly": true},
-    "facebook": {"slots": 5, "hourly": true}
+    "linkedin": {"slots": 5, "hourly": true, "records_per_hour": 5},
+    "facebook": {"slots": 5, "hourly": true, "records_per_hour": 5}
   },
   "actions": {
     "linkedin": ["find_target", "view_profile", "connect", "message", "follow"],
     "facebook": ["find_target", "view_profile", "message", "follow", "comment"]
   },
   "defaults": {
-    "max_targets_per_run": 5,
+    "max_targets_per_slot": 1,
     "dry_run": true
   }
 }
