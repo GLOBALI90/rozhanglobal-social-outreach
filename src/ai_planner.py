@@ -86,9 +86,9 @@ def fallback_plan() -> dict[str, object]:
         "industrial_zone": zone,
         "queries": [
             f"site:linkedin.com/company {COUNTRY} {region} {sector} procurement purchasing sourcing manufacturer importer -jobs -careers -recruitment",
+            f"site:linkedin.com/company {COUNTRY} {zone} {sector} industrial buyer factory procurement -jobs -careers",
             f"site:facebook.com {COUNTRY} {zone} {sector} company manufacturer distributor importer -jobs -careers",
-            f"{COUNTRY} {region} {sector} industrial buyer procurement factory importer company -jobs -careers -article -blog -directory",
-            f"{COUNTRY} {zone} industrial park {sector} manufacturer procurement factory company -jobs -careers -directory",
+            f"site:facebook.com {COUNTRY} {region} {sector} industrial company procurement sourcing factory -jobs -groups",
         ],
     }
 
@@ -117,9 +117,14 @@ Return ONLY valid JSON with this exact structure:
   "sector": "one of the core industries",
   "region": "specific region/city/industrial cluster focus",
   "industrial_zone": "specific zone/cluster or empty string",
-  "queries": ["query 1", "query 2", "query 3", "query 4"]
+  "queries": [
+    "LinkedIn company query 1",
+    "LinkedIn company query 2",
+    "Facebook public business Page query 1",
+    "Facebook public business Page query 2"
+  ]
 }}
-Queries must be concise web searches. At least one MUST explicitly target LinkedIn company pages and at least one MUST target Facebook public business pages. Include strong negative terms where useful."""
+The four queries MUST be exactly two LinkedIn queries containing `site:linkedin.com/company` and two Facebook queries containing `site:facebook.com`. Never put a LinkedIn site filter in a Facebook query or vice versa. Include strong negative terms where useful."""
 
 
 def parse_plan(text: str, provider: str) -> dict[str, object] | None:
@@ -127,13 +132,18 @@ def parse_plan(text: str, provider: str) -> dict[str, object] | None:
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         return None
-    result = json.loads(text[start : end + 1])
+    try:
+        result = json.loads(text[start : end + 1])
+    except Exception:
+        return None
     queries = [str(q).strip() for q in result.get("queries", []) if str(q).strip()]
-    if len(queries) < 4:
+    linkedin = [q for q in queries if "site:linkedin.com/company" in q.lower()]
+    facebook = [q for q in queries if "site:facebook.com" in q.lower()]
+    if len(queries) < 4 or len(linkedin) < 2 or len(facebook) < 2:
         return None
     result["provider"] = provider
     result["country"] = COUNTRY
-    result["queries"] = queries[:4]
+    result["queries"] = (linkedin[:2] + facebook[:2])
     return result
 
 
