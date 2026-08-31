@@ -1,6 +1,5 @@
 import os
 from typing import Any
-from urllib.parse import urlencode
 
 import requests
 
@@ -17,28 +16,6 @@ class ComposioClient:
     def configured(self) -> bool:
         return bool(self.base_url and self.api_key)
 
-    def resolve_connected_account(self, toolkit_slug: str) -> str:
-        """Pick the first ACTIVE connected account for a toolkit unless explicitly configured."""
-        if self.connected_account_id or not self.configured:
-            return self.connected_account_id
-        params = urlencode({"toolkit_slugs": toolkit_slug, "statuses": "ACTIVE", "limit": 20})
-        try:
-            response = requests.get(
-                f"{self.base_url}/connected_accounts?{params}",
-                headers={"x-api-key": self.api_key},
-                timeout=30,
-            )
-            response.raise_for_status()
-            data = response.json()
-            items = data.get("items", []) if isinstance(data, dict) else []
-            if items:
-                account_id = str(items[0].get("id", "")).strip()
-                if account_id:
-                    return account_id
-        except Exception as exc:
-            print(f"Composio connected account lookup failed for {toolkit_slug}: {exc}")
-        return ""
-
     def execute_tool(
         self,
         tool_slug: str,
@@ -48,6 +25,13 @@ class ComposioClient:
         connected_account_id: str | None = None,
         version: str = "latest",
     ) -> dict[str, Any]:
+        """Execute a Composio tool.
+
+        If no connected account ID is supplied, Composio uses the project's
+        default connected account as documented by the v3.1 API. This avoids a
+        separate connected-account lookup request and prevents the prior 401
+        failure from blocking every social read.
+        """
         if not self.configured:
             return {"status": "not_configured", "tool": tool_slug}
         if (arguments is None) == (text is None):
@@ -55,9 +39,6 @@ class ComposioClient:
 
         payload: dict[str, Any] = {"version": version}
         account = connected_account_id or self.connected_account_id
-        if not account:
-            toolkit_slug = tool_slug.split("_", 1)[0].lower()
-            account = self.resolve_connected_account(toolkit_slug)
         if account:
             payload["connected_account_id"] = account
         if arguments is not None:
@@ -76,7 +57,12 @@ class ComposioClient:
         except Exception:
             data = {"raw": response.text}
         if not response.ok:
-            return {"status": "error", "tool": tool_slug, "http_status": response.status_code, "error": data}
+            return {
+                "status": "error",
+                "tool": tool_slug,
+                "http_status": response.status_code,
+                "error": data,
+            }
         return {"status": "success", "tool": tool_slug, "data": data}
 
     def execute(self, action: str, payload: dict[str, Any], *, live_mode: bool) -> dict[str, Any]:
