@@ -83,16 +83,23 @@ def _composio_facebook_search(query: str) -> list[dict[str, str]]:
         return []
     data = result.get("data", {}) if isinstance(result, dict) else {}
     raw = data.get("response", data) if isinstance(data, dict) else data
-    text = raw if isinstance(raw, str) else str(raw)
     out: list[dict[str, str]] = []
-    for match in re.finditer(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", text):
-        url = match.group(0).rstrip(".,);]")
-        title = ""
-        before = text[max(0, match.start() - 180):match.start()]
-        parts = [x.strip() for x in re.split(r"\n|•|\\n", before) if x.strip()]
-        if parts:
-            title = parts[-1][:160]
-        out.append({"title": title or url, "url": url, "snippet": ""})
+    def walk(value: Any) -> None:
+        if len(out) >= 15:
+            return
+        if isinstance(value, dict):
+            url = str(value.get("url", value.get("link", value.get("page_url", "")))).strip()
+            if "facebook.com/" in url.lower():
+                out.append({"title": str(value.get("name", value.get("title", ""))).strip(), "url": url, "snippet": str(value.get("description", value.get("about", ""))).strip()})
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+        elif isinstance(value, str):
+            for match in re.finditer(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", value):
+                out.append({"title": "", "url": match.group(0).rstrip(".,);]"), "snippet": ""})
+    walk(raw)
     return out
 
 
@@ -150,7 +157,7 @@ def _clean(results: list[dict[str, str]], platform: str, history: set[str]) -> l
         title_key = title.lower().rstrip("/")
         if not url or required not in low or any(x in low for x in bad_fragments):
             continue
-        if low in history or title_key in history or low in seen:
+        if low in history or (title_key and title_key in history) or low in seen:
             continue
         seen.add(low)
         cleaned.append({"title": title, "url": url, "snippet": item.get("snippet", "").strip()})
@@ -171,14 +178,26 @@ def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None
     collected: list[dict[str, str]] = []
 
     queries = _platform_queries(platform, planner)
-    if not queries:
-        # Never feed a query targeted at the other network into this platform.
-        other = "site:facebook.com" if platform == "linkedin" else "site:linkedin.com/company"
-        queries = [
-            f"{planner.get('country', 'China')} {planner.get('region', '')} {planner.get('sector', '')} company manufacturer buyer procurement -{other.replace('site:', '')}"
+    country = str(planner.get("country", "China"))
+    region = str(planner.get("region", ""))
+    sector = str(planner.get("sector", ""))
+    zone = str(planner.get("industrial_zone", ""))
+    if platform == "linkedin":
+        queries += [
+            f"site:linkedin.com/company \"{country}\" \"{region}\" \"{sector}\" procurement manufacturer importer -jobs -careers -recruitment",
+            f"site:linkedin.com/company \"{country}\" \"{zone}\" \"{sector}\" supplier factory sourcing -jobs -careers",
+        ]
+    else:
+        queries += [
+            f"site:facebook.com \"{country}\" \"{region}\" \"{sector}\" company manufacturer importer -jobs -group -marketplace",
+            f"site:facebook.com \"{country}\" \"{zone}\" \"{sector}\" business factory supplier -jobs -group",
         ]
 
+    seen_queries: set[str] = set()
     for query in queries:
+        if query in seen_queries or len(collected) >= limit:
+            continue
+        seen_queries.add(query)
         results: list[dict[str, str]] = []
         provider = ""
         if platform == "facebook":
@@ -196,7 +215,5 @@ def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None
         candidates = _clean(results, platform, history)
         collected = _clean(collected + candidates, platform, history)
         print(f"Discovery | platform={platform} | provider={provider} | new_candidates={len(candidates)} | query={query}")
-        if len(collected) >= limit:
-            break
 
     return collected[:limit], planner
