@@ -2,7 +2,9 @@
   "brand": "ROZHAN GLOBAL",
   "legal_name": "Rozhan Tejarat Sirvan",
   "website": "https://www.rozhanglobal.com",
-  "focus": ["chemicals", "petrochemicals", "petroleum products", "steel", "industrial raw materials"],
-  "target_markets": ["India", "China", "UAE", "Saudi Arabia", "Oman", "Turkey", "Tajikistan"],
-  "positioning": "competitive international sourcing, supplier comparison, supply continuity and cross-border procurement support"
+  "target_country": "China",
+  "sectors": ["Petroleum products", "Chemicals", "Petrochemicals", "Steel", "Renewable energy", "Industrial raw materials"],
+  "target_customers": ["Direct buyers", "Industrial consumers", "Raw-material consumers", "Importers and procurement companies"],
+  "positioning": "competitive international sourcing, supplier comparison, supply continuity and cross-border procurement support",
+  "contact_policy": "Use only publicly available business contact information; never guess contact details."
 }
