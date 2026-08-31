@@ -8,6 +8,7 @@ from urllib.parse import quote_plus, unquote
 import requests
 
 from .ai_planner import plan
+from .composio_client import ComposioClient
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
@@ -48,7 +49,6 @@ def _you_search(query: str) -> list[dict[str, str]]:
     except Exception as exc:
         print(f"You.com search failed: {exc}")
         return []
-
     results = data.get("results", {}) if isinstance(data, dict) else {}
     web = results.get("web", []) if isinstance(results, dict) else results
     if not isinstance(web, list):
@@ -64,6 +64,35 @@ def _you_search(query: str) -> list[dict[str, str]]:
             "url": str(item.get("url", item.get("link", ""))).strip(),
             "snippet": str(snippet or "").strip(),
         })
+    return out
+
+
+def _composio_facebook_search(query: str) -> list[dict[str, str]]:
+    client = ComposioClient()
+    if not client.configured:
+        return []
+    task = (
+        f'Search Facebook Pages using the connected Facebook account for public business/company Pages relevant to this query: {query}. '
+        'Return only public business/company Pages with name, Page URL and short public description when available. '
+        'Read-only. Do not send messages, comment, like, follow, publish or modify anything.'
+    )
+    try:
+        result = client.execute_tool("FACEBOOK_SEARCH_PAGES", text=task, version="latest")
+    except Exception as exc:
+        print(f"Composio Facebook Page search failed: {exc}")
+        return []
+    data = result.get("data", {}) if isinstance(result, dict) else {}
+    raw = data.get("response", data) if isinstance(data, dict) else data
+    text = raw if isinstance(raw, str) else str(raw)
+    out: list[dict[str, str]] = []
+    for match in re.finditer(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", text):
+        url = match.group(0).rstrip(".,);]")
+        title = ""
+        before = text[max(0, match.start() - 180):match.start()]
+        parts = [x.strip() for x in re.split(r"\n|•|\\n", before) if x.strip()]
+        if parts:
+            title = parts[-1][:160]
+        out.append({"title": title or url, "url": url, "snippet": ""})
     return out
 
 
@@ -108,7 +137,10 @@ def _duckduckgo_search(query: str) -> list[dict[str, str]]:
 
 def _clean(results: list[dict[str, str]], platform: str, history: set[str]) -> list[dict[str, str]]:
     required = "linkedin.com/company/" if platform == "linkedin" else "facebook.com/"
-    bad_fragments = ("/posts/", "/post/", "/jobs/", "/careers/", "/events/", "/blog/", "/article/", "/search?", "/groups/", "/marketplace/", "/reel/", "/videos/", "/stories/")
+    bad_fragments = (
+        "/posts/", "/post/", "/jobs/", "/careers/", "/events/", "/blog/", "/article/",
+        "/search?", "/groups/", "/marketplace/", "/reel/", "/videos/", "/stories/", "/people/"
+    )
     cleaned: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in results:
@@ -125,17 +157,36 @@ def _clean(results: list[dict[str, str]], platform: str, history: set[str]) -> l
     return cleaned
 
 
+def _platform_queries(platform: str, planner: dict[str, object]) -> list[str]:
+    queries = [str(q).strip() for q in planner.get("queries", []) if str(q).strip()]
+    marker = "site:linkedin.com/company" if platform == "linkedin" else "site:facebook.com"
+    return [q for q in queries if marker in q.lower()]
+
+
 def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None = None) -> tuple[list[dict[str, str]], dict[str, object]]:
     if platform not in {"facebook", "linkedin"}:
         raise ValueError(f"Unsupported platform: {platform}")
     planner = planner or plan()
     history = _history()
-    queries = [str(q).strip() for q in planner.get("queries", []) if str(q).strip()]
     collected: list[dict[str, str]] = []
 
+    queries = _platform_queries(platform, planner)
+    if not queries:
+        # Never feed a query targeted at the other network into this platform.
+        other = "site:facebook.com" if platform == "linkedin" else "site:linkedin.com/company"
+        queries = [
+            f"{planner.get('country', 'China')} {planner.get('region', '')} {planner.get('sector', '')} company manufacturer buyer procurement -{other.replace('site:', '')}"
+        ]
+
     for query in queries:
-        results = _you_search(query)
-        provider = "You.com"
+        results: list[dict[str, str]] = []
+        provider = ""
+        if platform == "facebook":
+            results = _composio_facebook_search(query)
+            provider = "Composio Facebook"
+        if not results:
+            results = _you_search(query)
+            provider = "You.com"
         if not results:
             results = _searx_search(query)
             provider = "SearXNG"
