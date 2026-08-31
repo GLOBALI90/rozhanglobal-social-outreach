@@ -1,0 +1,60 @@
+name: ROZHAN Social 10-Record Hourly Batch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rozhanglobal-social-hourly
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run exactly 10 records (5 Facebook + 5 LinkedIn)
+        env:
+          LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
+          COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: python -m src.run_hourly_batch
+
+      - name: Validate hourly record count
+        run: |
+          python - <<'PY'
+          import csv
+          from collections import Counter
+          rows = list(csv.DictReader(open('data/social_actions.csv', encoding='utf-8')))
+          run_id = '${{ github.run_id }}'
+          fresh = [r for r in rows if r.get('run_id') == run_id]
+          counts = Counter(r.get('platform') for r in fresh)
+          print('run_id=', run_id)
+          print('records=', len(fresh), 'facebook=', counts.get('facebook', 0), 'linkedin=', counts.get('linkedin', 0))
+          assert len(fresh) == 10, f'Expected 10 records, got {len(fresh)}'
+          assert counts.get('facebook', 0) == 5, 'Expected 5 Facebook records'
+          assert counts.get('linkedin', 0) == 5, 'Expected 5 LinkedIn records'
+          PY
+
+      - name: Save state
+        run: |
+          git config user.name "rozhanglobal-social-automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Update hourly social batch state"
+          git push
