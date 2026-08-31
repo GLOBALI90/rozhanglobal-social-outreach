@@ -1,0 +1,30 @@
+name: ROZHAN Facebook 3
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 * * * *'
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Run Facebook slot 3
+        env:
+          LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
+          COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: python -m src.main --platform facebook --slot 3
+      - name: Save state
+        run: |
+          git config user.name "rozhanglobal-social-automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ || true
+          git diff --cached --quiet || git commit -m "Update Facebook slot 3 state"
+          git push || true
