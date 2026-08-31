@@ -33,6 +33,9 @@ jobs:
           LIVE_MODE: ${{ secrets.SOCIAL_LIVE_MODE }}
           COMPOSIO_BASE_URL: ${{ secrets.COMPOSIO_BASE_URL }}
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          YOU_API_KEY: ${{ secrets.YOU_API_KEY }}
+          YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
+          SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
         run: python -m src.run_hourly_batch
 
       - name: Validate hourly record count
