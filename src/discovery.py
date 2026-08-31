@@ -5,6 +5,7 @@ from urllib.parse import quote_plus, unquote
 
 import requests
 
+DEFAULT_YOU_URL = "https://ydc-index.io/v1/search"
 DEFAULT_QUERIES = {
     "linkedin": [
         "site:linkedin.com/company chemical distributor procurement petroleum products",
@@ -24,15 +25,21 @@ DEFAULT_QUERIES = {
 
 
 def _you_search(query: str) -> list[dict[str, str]]:
-    key = os.getenv("YOU_API_KEY", "")
+    key = os.getenv("YOU_API_KEY", "").strip()
     if not key:
         return []
-    url = os.getenv("YOU_SEARCH_URL", "https://ydc-index.io/v1/search")
+    # Empty optional secret must not override the working default.
+    url = os.getenv("YOU_SEARCH_URL", "").strip() or DEFAULT_YOU_URL
     try:
+        # Current You.com Web Search API supports POST /v1/search.
         r = requests.post(
             url,
-            headers={"X-API-Key": key, "Content-Type": "application/json", "Accept": "application/json"},
-            json={"query": query, "count": 10, "safesearch": "moderate", "language": "en"},
+            headers={
+                "X-API-Key": key,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"query": query, "count": 10},
             timeout=30,
         )
         r.raise_for_status()
@@ -41,25 +48,31 @@ def _you_search(query: str) -> list[dict[str, str]]:
         print(f"You.com search failed: {exc}")
         return []
 
-    results = data.get("results", {}) if isinstance(data, dict) else {}
-    items = results.get("web", []) if isinstance(results, dict) else (results if isinstance(results, list) else [])
+    web_results = []
+    if isinstance(data, dict):
+        results = data.get("results", {})
+        if isinstance(results, dict):
+            web_results = results.get("web", [])
+        elif isinstance(results, list):
+            web_results = results
+
     out: list[dict[str, str]] = []
-    for x in items:
-        if not isinstance(x, dict):
+    for item in web_results:
+        if not isinstance(item, dict):
             continue
-        snippets = x.get("snippets", [])
-        snippet = snippets[0] if isinstance(snippets, list) and snippets else x.get("description", "")
+        snippets = item.get("snippets", [])
+        snippet = snippets[0] if isinstance(snippets, list) and snippets else item.get("description", "")
         out.append({
-            "title": str(x.get("title", "")),
-            "url": str(x.get("url", x.get("link", ""))),
+            "title": str(item.get("title", "")),
+            "url": str(item.get("url", item.get("link", ""))),
             "snippet": str(snippet or ""),
         })
     return out
 
 
 def _searx_search(query: str) -> list[dict[str, str]]:
-    base = os.getenv("SEARXNG_URL", "").rstrip("/")
-    if not base:
+    base = os.getenv("SEARXNG_URL", "").strip().rstrip("/")
+    if not base or "your-searx-instance.example" in base:
         return []
     try:
         r = requests.get(f"{base}/search", params={"q": query, "format": "json"}, timeout=30)
