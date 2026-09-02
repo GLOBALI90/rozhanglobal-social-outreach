@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .ai_planner import plan
 from .discovery import discover
-from .social_enrichment import collect_for_lead
+from .social_enrichment import collect_for_lead, collect_connected_linkedin_organizations
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
@@ -56,6 +56,12 @@ def main() -> int:
         )
     )
 
+    # Direct LinkedIn connection check/collection: retrieve organizations that the
+    # connected member can access with the approved organization role. This does not
+    # attempt to scrape or enumerate arbitrary public LinkedIn companies.
+    connected_orgs = collect_connected_linkedin_organizations(run_id)
+    print(f"LINKEDIN CONNECTED ORGANIZATION COLLECTION | count={connected_orgs}")
+
     for platform in ("facebook", "linkedin"):
         leads, _ = discover(platform, limit=5, planner=planner)
         if len(leads) != 5:
@@ -86,13 +92,12 @@ def main() -> int:
             append_lead(row)
             total += 1
 
-            # Read-only Social enrichment through Composio. This step does not
-            # publish, message, comment, connect, like, follow or delete.
             collect_for_lead(row)
 
     print(
         f"HOURLY BATCH COMPLETE | discovered_and_recorded={total} | facebook=5 | linkedin=5 "
-        f"| country={planner.get('country')} | sector={planner.get('sector')}"
+        f"| linkedin_connected_orgs={connected_orgs}"
+        f" | country={planner.get('country')} | sector={planner.get('sector')}"
     )
     if total != 10:
         raise RuntimeError(f"Expected exactly 10 records, got {total}")
