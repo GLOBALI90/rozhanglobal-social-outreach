@@ -12,8 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
 ACTIVITY = ROOT / "data/social_activity.csv"
 LINKEDIN_ORGS = ROOT / "data/linkedin_connected_orgs.csv"
+FACEBOOK_MANAGED = ROOT / "data/facebook_managed_pages.csv"
 FIELDS = ["run_id", "platform", "slot", "target_name", "target_url", "tool", "status", "summary", "raw_json", "created_at"]
 ORG_FIELDS = ["run_id", "organization_id", "name", "vanity_name", "website", "logo", "locations", "primary_organization_type", "raw_json", "created_at"]
+FB_FIELDS = ["run_id", "page_id", "name", "category", "about", "link", "website", "tasks", "raw_json", "created_at"]
 
 
 def now_iso() -> str:
@@ -36,6 +38,15 @@ def _save_org(row: dict[str, str]) -> None:
         if not exists:
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in ORG_FIELDS})
+
+
+def _save_fb(row: dict[str, str]) -> None:
+    exists = FACEBOOK_MANAGED.exists() and FACEBOOK_MANAGED.stat().st_size > 0
+    with FACEBOOK_MANAGED.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=FB_FIELDS)
+        if not exists:
+            writer.writeheader()
+        writer.writerow({key: row.get(key, "") for key in FB_FIELDS})
 
 
 def _compact(value: Any, limit: int = 12000) -> str:
@@ -85,27 +96,6 @@ def _run_tool(client: ComposioClient, tool: str, arguments: dict[str, Any]) -> t
     return str(result.get("status", "unknown")), _summary(data), _compact(result), data if isinstance(data, dict) else {"result": data}
 
 
-def _facebook_page_id(url: str) -> str:
-    patterns = [
-        r"/p/[^/]*-(\d{8,})/?",
-        r"facebook\.com/(\d{8,})(?:/|\?|$)",
-        r"m\.facebook\.com/(\d{8,})(?:/|\?|$)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url, re.IGNORECASE)
-        if match:
-            return match.group(1)
-    return ""
-
-
-def _record(lead: dict[str, str], tool: str, status: str, summary: str, raw: str = "") -> None:
-    _save({
-        "run_id": lead.get("run_id", ""), "platform": lead.get("platform", ""), "slot": lead.get("slot", ""),
-        "target_name": lead.get("name", ""), "target_url": lead.get("url", ""), "tool": tool,
-        "status": status, "summary": summary, "raw_json": raw, "created_at": now_iso(),
-    })
-
-
 def _iter_org_candidates(value: Any):
     if isinstance(value, dict):
         keys = {str(k).lower() for k in value}
@@ -119,30 +109,37 @@ def _iter_org_candidates(value: Any):
             yield from _iter_org_candidates(item)
 
 
-def collect_connected_linkedin_organizations(run_id: str) -> int:
-    """Collect organizations the connected LinkedIn member can access via Composio.
+def _iter_fb_page_candidates(value: Any):
+    if isinstance(value, dict):
+        keys = {str(k).lower() for k in value}
+        looks_like_page = "id" in keys and ("name" in keys or "category" in keys or "link" in keys)
+        if looks_like_page:
+            yield value
+        for child in value.values():
+            yield from _iter_fb_page_candidates(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_fb_page_candidates(item)
 
-    This is deliberately separate from public LinkedIn discovery. LinkedIn's official
-    organization APIs only expose richer organization data when the authenticated member
-    has appropriate organization roles/permissions.
-    """
+
+def collect_connected_linkedin_organizations(run_id: str) -> int:
+    """Collect organizations the connected LinkedIn member can access via Composio."""
     client = ComposioClient()
     lead = {"run_id": run_id, "platform": "linkedin", "slot": "connected_orgs", "name": "Connected LinkedIn organizations", "url": ""}
-    tool = "LINKEDIN_GET_COMPANY_INFO"
     if not client.configured:
-        _record(lead, tool, "not_configured", "Composio Project API key is not configured")
+        _record(lead, "LINKEDIN_GET_COMPANY_INFO", "not_configured", "Composio Project API key is not configured")
         return 0
     try:
         status, summary, raw, data = _run_tool(
             client,
-            tool,
+            "LINKEDIN_GET_COMPANY_INFO",
             {"role": "ADMINISTRATOR", "count": 100, "start": 0, "state": "APPROVED"},
         )
     except Exception as exc:
-        _record(lead, tool, "exception", str(exc))
+        _record(lead, "LINKEDIN_GET_COMPANY_INFO", "exception", str(exc))
         return 0
 
-    _record(lead, tool, status, summary, raw)
+    _record(lead, "LINKEDIN_GET_COMPANY_INFO", status, summary, raw)
     if status != "success":
         print(f"LINKEDIN CONNECTED ORGS | status={status} | count=0")
         return 0
@@ -175,6 +172,64 @@ def collect_connected_linkedin_organizations(run_id: str) -> int:
     return count
 
 
+def check_linkedin_identity(run_id: str) -> bool:
+    """Health-check the actual connected LinkedIn member without treating it as lead discovery."""
+    client = ComposioClient()
+    lead = {"run_id": run_id, "platform": "linkedin", "slot": "identity", "name": "Connected LinkedIn identity", "url": ""}
+    if not client.configured:
+        _record(lead, "LINKEDIN_GET_MY_INFO", "not_configured", "Composio Project API key is not configured")
+        return False
+    try:
+        status, summary, raw, _ = _run_tool(client, "LINKEDIN_GET_MY_INFO", {})
+    except Exception as exc:
+        status, summary, raw = "exception", str(exc), ""
+    _record(lead, "LINKEDIN_GET_MY_INFO", status, summary, raw)
+    print(f"LINKEDIN IDENTITY CHECK | status={status}")
+    return status == "success"
+
+
+def collect_managed_facebook_pages(run_id: str) -> int:
+    """Collect Pages actually managed by the connected Facebook account."""
+    client = ComposioClient()
+    lead = {"run_id": run_id, "platform": "facebook", "slot": "managed_pages", "name": "Managed Facebook pages", "url": ""}
+    if not client.configured:
+        _record(lead, "FACEBOOK_LIST_MANAGED_PAGES", "not_configured", "Composio Project API key is not configured")
+        return 0
+    try:
+        status, summary, raw, data = _run_tool(client, "FACEBOOK_LIST_MANAGED_PAGES", {})
+    except Exception as exc:
+        _record(lead, "FACEBOOK_LIST_MANAGED_PAGES", "exception", str(exc))
+        return 0
+    _record(lead, "FACEBOOK_LIST_MANAGED_PAGES", status, summary, raw)
+    if status != "success":
+        print(f"FACEBOOK MANAGED PAGES | status={status} | count=0")
+        return 0
+    seen: set[str] = set()
+    count = 0
+    for page in _iter_fb_page_candidates(data):
+        page_id = str(page.get("id") or "").strip()
+        name = str(page.get("name") or "").strip()
+        key = page_id or name
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        _save_fb({
+            "run_id": run_id,
+            "page_id": page_id,
+            "name": name,
+            "category": str(page.get("category") or ""),
+            "about": str(page.get("about") or ""),
+            "link": str(page.get("link") or ""),
+            "website": str(page.get("website") or ""),
+            "tasks": _compact(page.get("tasks") or "", 2000),
+            "raw_json": _compact(page, 12000),
+            "created_at": now_iso(),
+        })
+        count += 1
+    print(f"FACEBOOK MANAGED PAGES | status={status} | count={count}")
+    return count
+
+
 def collect_for_lead(lead: dict[str, str]) -> None:
     client = ComposioClient()
     platform = lead.get("platform", "")
@@ -185,7 +240,6 @@ def collect_for_lead(lead: dict[str, str]) -> None:
         _record(lead, "composio", "not_configured", "Composio Project API key is not configured")
         return
 
-    tasks: list[tuple[str, dict[str, Any]]] = []
     if platform == "facebook":
         page_id = _facebook_page_id(url)
         if not page_id:
@@ -197,21 +251,51 @@ def collect_for_lead(lead: dict[str, str]) -> None:
             ("FACEBOOK_GET_PAGE_DETAILS", {"page_id": page_id, "fields": "id,name,about,category,description,followers_count,website,link,username,emails,phone,location,verification_status"}),
             ("FACEBOOK_GET_PAGE_POSTS", {"page_id": page_id, "limit": 10, "fields": "id,message,created_time,updated_time,permalink_url,attachments,from,shares,reactions.summary(true),comments.summary(true)"}),
         ]
-    elif platform == "linkedin":
-        tasks = [("LINKEDIN_GET_COMPANY_INFO", {"role": "ADMINISTRATOR", "count": 10, "start": 0, "state": "APPROVED"})]
-    else:
+        for tool, arguments in tasks:
+            try:
+                status, summary, raw, _ = _run_tool(client, tool, arguments)
+            except Exception as exc:
+                status, summary, raw = "exception", str(exc), ""
+            _record(lead, tool, status, summary, raw)
+            if status == "success" and summary:
+                social_notes.append(f"{tool}: {summary}")
+            print(f"SOCIAL ENRICHMENT | platform={platform} | slot={lead.get('slot')} | tool={tool} | status={status} | target={url}")
+        _update_lead_context(lead.get("run_id", ""), url, social_notes)
         return
 
-    for tool, arguments in tasks:
-        try:
-            status, summary, raw, _ = _run_tool(client, tool, arguments)
-        except Exception as exc:
-            status, summary, raw = "exception", str(exc), ""
-        _record(lead, tool, status, summary, raw)
-        if status == "success" and summary:
-            social_notes.append(f"{tool}: {summary}")
-        print(f"SOCIAL ENRICHMENT | platform={platform} | slot={lead.get('slot')} | tool={tool} | status={status} | target={url}")
-    _update_lead_context(lead.get("run_id", ""), url, social_notes)
+    if platform == "linkedin":
+        # Public company discovery is provided by the Search layer. The Composio
+        # LinkedIn toolkit currently exposes account/org actions, not arbitrary
+        # public-company discovery. Do not mislabel an ACL lookup as public enrichment.
+        _record(
+            lead,
+            "LINKEDIN_PUBLIC_DISCOVERY",
+            "search_only",
+            "Public LinkedIn company lead discovered through the Search layer; Composio public-company lookup is not exposed in the connected toolkit.",
+        )
+        print(f"SOCIAL ENRICHMENT | platform=linkedin | slot={lead.get('slot')} | tool=LINKEDIN_PUBLIC_DISCOVERY | status=search_only | target={url}")
+        return
+
+
+def _facebook_page_id(url: str) -> str:
+    patterns = [
+        r"/p/[^/]*-(\d{8,})/?",
+        r"facebook\.com/(\d{8,})(?:/|\?|$)",
+        r"m\.facebook\.com/(\d{8,})(?:/|\?|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _record(lead: dict[str, str], tool: str, status: str, summary: str, raw: str = "") -> None:
+    _save({
+        "run_id": lead.get("run_id", ""), "platform": lead.get("platform", ""), "slot": lead.get("slot", ""),
+        "target_name": lead.get("name", ""), "target_url": lead.get("url", ""), "tool": tool,
+        "status": status, "summary": summary, "raw_json": raw, "created_at": now_iso(),
+    })
 
 
 def enrich_run(run_id: str) -> int:
