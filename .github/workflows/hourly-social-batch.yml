@@ -104,7 +104,7 @@ jobs:
           statuses = Counter(r.get('status') for r in activity)
           print('social_activity_statuses=', dict(statuses))
           assert activity, 'No social activity records were produced'
-          acceptable = {'success', 'fallback_required', 'error'}
+          acceptable = {'success', 'fallback_required', 'error', 'search_only'}
           unexpected = [r for r in activity if r.get('status') not in acceptable]
           assert not unexpected, f'Unexpected social activity statuses: {unexpected[:3]}'
           PY
