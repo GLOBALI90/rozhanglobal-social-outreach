@@ -6,7 +6,12 @@ from pathlib import Path
 
 from .ai_planner import plan
 from .discovery import discover
-from .social_enrichment import collect_for_lead, collect_connected_linkedin_organizations
+from .social_enrichment import (
+    check_linkedin_identity,
+    collect_connected_linkedin_organizations,
+    collect_for_lead,
+    collect_managed_facebook_pages,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ROOT / "data/social_leads.csv"
@@ -56,11 +61,14 @@ def main() -> int:
         )
     )
 
-    # Direct LinkedIn connection check/collection: retrieve organizations that the
-    # connected member can access with the approved organization role. This does not
-    # attempt to scrape or enumerate arbitrary public LinkedIn companies.
+    # Direct account/Page checks. These are separate from public lead discovery.
+    linkedin_identity_ok = check_linkedin_identity(run_id)
     connected_orgs = collect_connected_linkedin_organizations(run_id)
-    print(f"LINKEDIN CONNECTED ORGANIZATION COLLECTION | count={connected_orgs}")
+    managed_fb_pages = collect_managed_facebook_pages(run_id)
+    print(
+        f"DIRECT ACCOUNT CHECKS | linkedin_identity={'ok' if linkedin_identity_ok else 'failed'} "
+        f"| linkedin_connected_orgs={connected_orgs} | facebook_managed_pages={managed_fb_pages}"
+    )
 
     for platform in ("facebook", "linkedin"):
         leads, _ = discover(platform, limit=5, planner=planner)
@@ -91,12 +99,11 @@ def main() -> int:
             }
             append_lead(row)
             total += 1
-
             collect_for_lead(row)
 
     print(
         f"HOURLY BATCH COMPLETE | discovered_and_recorded={total} | facebook=5 | linkedin=5 "
-        f"| linkedin_connected_orgs={connected_orgs}"
+        f"| linkedin_connected_orgs={connected_orgs} | facebook_managed_pages={managed_fb_pages}"
         f" | country={planner.get('country')} | sector={planner.get('sector')}"
     )
     if total != 10:
