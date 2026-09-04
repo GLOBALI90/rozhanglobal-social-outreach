@@ -2,8 +2,7 @@ name: ROZHAN Social 10-Record Hourly Batch
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'
+  # Automatic schedule paused temporarily while LinkedIn account access is repaired.
 
 permissions:
   contents: write
