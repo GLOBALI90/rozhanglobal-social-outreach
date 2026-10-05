@@ -44,18 +44,48 @@ def send_whatsapp(phone: str, message: str) -> tuple[bool, str]:
         return False, "missing_waha_configuration"
     if not number:
         return False, "invalid_phone"
+    headers = {"X-Api-Key": api_key}
     try:
-        status = requests.get(
-            f"{base}/api/checkNumberStatus",
-            params={"phone": number, "session": session},
-            headers={"X-Api-Key": api_key},
-            timeout=20,
+        # Blitz free instances can sleep. Wake WAHA before every outbound attempt.
+        wake = requests.post(
+            f"{base}/api/sessions/{session}/start",
+            headers={**headers, "Content-Type": "application/json"},
+            json={},
+            timeout=60,
         )
+        if not (wake.ok or wake.status_code == 409):
+            return False, f"waha_wake_failed:http_{wake.status_code}"
+
+        # Give a cold-starting WAHA instance a short window to become responsive.
+        last_status = None
+        for _ in range(3):
+            try:
+                status = requests.get(
+                    f"{base}/api/checkNumberStatus",
+                    params={"phone": number, "session": session},
+                    headers=headers,
+                    timeout=30,
+                )
+                last_status = status
+                if status.ok:
+                    break
+            except requests.RequestException:
+                pass
+            import time
+            time.sleep(5)
+
+        if last_status is None or not last_status.ok:
+            code = last_status.status_code if last_status is not None else "timeout"
+            return False, f"waha_not_ready:http_{code}"
+
+        payload = last_status.json()
+        if isinstance(payload, dict) and payload.get("numberExists") is False:
+            return False, "whatsapp_number_not_registered"
         if status.ok and isinstance(status.json(), dict) and status.json().get("numberExists") is False:
             return False, "whatsapp_number_not_registered"
         response = requests.post(
             f"{base}/api/sendText",
-            headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+            headers={**headers, "Content-Type": "application/json"},
             json={"session": session, "chatId": f"{number}@c.us", "text": message},
             timeout=30,
         )
