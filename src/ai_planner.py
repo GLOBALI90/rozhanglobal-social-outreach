@@ -10,7 +10,7 @@ COMPANY = json.loads((ROOT / "config/company.json").read_text(encoding="utf-8"))
 LEADS = ROOT / "data/social_leads.csv"
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
 CLOUDFLARE_URL_TEMPLATE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 CLOUDFLARE_DEFAULT_MODEL = "@cf/zai-org/glm-4.7-flash"
 
@@ -155,17 +155,20 @@ def call_gemini(prompt: str) -> dict[str, object] | None:
     model = os.getenv("GEMINI_MODEL", GEMINI_DEFAULT_MODEL).strip() or GEMINI_DEFAULT_MODEL
     try:
         response = requests.post(
-            GEMINI_URL,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent".format(model),
+            params={"key": key},
+            headers={"Content-Type": "application/json"},
             json={
-                "model": model,
-                "temperature": 0.2,
-                "messages": [{"role": "user", "content": prompt}],
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.2},
             },
             timeout=45,
         )
         response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"]
+        payload = response.json()
+        candidates = payload.get("candidates") or []
+        parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []
+        text = "".join(str(part.get("text", "")) for part in parts if isinstance(part, dict))
         result = parse_plan(text, f"gemini:{model}")
         if result:
             print(f"AI planner: Gemini primary succeeded | model={model}")
