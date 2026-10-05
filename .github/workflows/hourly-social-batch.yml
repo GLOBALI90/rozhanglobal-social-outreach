@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: rozhanglobal-social-hourly
+  group: rozhanglobal-social-3hour
   cancel-in-progress: false
 
 jobs:
@@ -56,7 +56,7 @@ jobs:
           test -n "$GMAIL_USERNAME" || { echo "Missing required repository secret: GMAIL_USERNAME"; exit 1; }
           test -n "$GMAIL_APP_PASSWORD" || { echo "Missing required repository secret: GMAIL_APP_PASSWORD"; exit 1; }
           test "$GMAIL_USERNAME" = "saberi.export.import@gmail.com" || { echo "GMAIL_USERNAME must be saberi.export.import@gmail.com"; exit 1; }
-          echo "Outbound email send is intentionally locked during activation; drafts only."
+          echo "Configuration check passed; outbound channels remain gated by SEND_EMAILS and SEND_WHATSAPP."
 
       - name: Run AI-planned discovery and Composio social enrichment (5 Facebook + 5 LinkedIn)
         env:
