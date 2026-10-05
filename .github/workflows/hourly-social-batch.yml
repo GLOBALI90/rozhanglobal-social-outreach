@@ -109,6 +109,26 @@ jobs:
           assert not unexpected, f'Unexpected social activity statuses: {unexpected[:3]}'
           PY
 
+      - name: Wake WAHA/Blitz before outbound outreach
+        if: ${{ secrets.SEND_WHATSAPP == 'true' }}
+        env:
+          WAHA_URL: ${{ secrets.WAHA_URL }}
+          WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
+          WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
+        run: |
+          test -n "$WAHA_URL" || { echo "Missing WAHA_URL"; exit 1; }
+          test -n "$WAHA_API_KEY" || { echo "Missing WAHA_API_KEY"; exit 1; }
+          SESSION="${WAHA_SESSION:-default}"
+          STATUS="$(curl -sS -o /tmp/waha-wake.json -w "%{http_code}" --max-time 90 \
+            -X POST "$WAHA_URL/api/sessions/$SESSION/start" \
+            -H "X-Api-Key: $WAHA_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')" || true
+          case "$STATUS" in
+            200|201|202|409) echo "WAHA wake request accepted (HTTP $STATUS)." ;;
+            *) echo "WAHA wake failed (HTTP $STATUS)."; cat /tmp/waha-wake.json || true; exit 1 ;;
+          esac
+
       - name: Generate personalized emails and send eligible business emails
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
