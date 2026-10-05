@@ -120,8 +120,8 @@ jobs:
           YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
-          MAX_EMAILS_PER_RUN: '10'
+          SEND_EMAILS: 'false'
+          MAX_EMAILS_PER_RUN: '0'
         run: python -c "from src.email_outreach import process_run; import os; process_run(os.environ['GITHUB_RUN_ID'])"
 
       - name: Save state
