@@ -269,7 +269,7 @@ def process_run(run_id: str) -> None:
     with LEADS.open(encoding="utf-8") as f:
         leads = [r for r in csv.DictReader(f) if r.get("run_id") == run_id]
     send_enabled = os.getenv("SEND_EMAILS", "false").strip().lower() == "true"
-    max_sends = int(os.getenv("MAX_EMAILS_PER_RUN", "10"))
+    max_sends = int(os.getenv("MAX_EMAILS_PER_RUN", "1"))
     sends = 0
 
     for lead in leads:
