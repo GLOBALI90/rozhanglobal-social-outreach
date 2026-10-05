@@ -17,7 +17,7 @@ OUTREACH = ROOT / "data/social_outreach.csv"
 ACTIVITY = ROOT / "data/social_activity.csv"
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
 CLOUDFLARE_URL_TEMPLATE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 CLOUDFLARE_DEFAULT_MODEL = "@cf/zai-org/glm-4.7-flash"
 HEADERS = {"User-Agent": "Mozilla/5.0 ROZHAN-Global-Outreach/1.0"}
@@ -187,15 +187,20 @@ def _generate_with_gemini(prompt: str) -> tuple[dict[str, str] | None, str]:
     model = os.getenv("GEMINI_MODEL", GEMINI_DEFAULT_MODEL).strip() or GEMINI_DEFAULT_MODEL
     try:
         r = requests.post(
-            GEMINI_URL,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"model": model, "temperature": 0.35, "messages": [{"role": "user", "content": prompt}]},
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent".format(model),
+            params={"key": key},
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.35},
+            },
             timeout=45,
         )
         r.raise_for_status()
         payload = r.json()
-        choices = payload.get("choices") or []
-        text = choices[0]["message"]["content"] if choices else ""
+        candidates = payload.get("candidates") or []
+        parts = ((candidates[0] if candidates else {}).get("content") or {}).get("parts") or []
+        text = "".join(str(part.get("text", "")) for part in parts if isinstance(part, dict))
         return _parse_json(text), f"gemini:{model}"
     except Exception as exc:
         print(f"Gemini email generation failed: {exc}")
