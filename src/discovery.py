@@ -166,14 +166,15 @@ def discover(platform: str, limit: int = 5, *, planner: dict[str, object] | None
         if query in seen_queries or len(collected) >= limit:
             continue
         seen_queries.add(query)
-        results = _you_search(query)
-        provider = "You.com"
-        if not results:
-            results = _searx_search(query)
-            provider = "SearXNG"
+        # Free/public search first; You.com remains a deep fallback.
+        results = _searx_search(query)
+        provider = "SearXNG"
         if not results:
             results = _duckduckgo_search(query)
             provider = "DuckDuckGo"
+        if not results:
+            results = _you_search(query)
+            provider = "You.com"
         candidates = _clean(results, platform, history)
         collected = _clean(collected + candidates, platform, history)
         print(f"Discovery | platform={platform} | provider={provider} | new_candidates={len(candidates)} | query={query}")
