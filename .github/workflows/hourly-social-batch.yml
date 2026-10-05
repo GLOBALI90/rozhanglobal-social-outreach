@@ -126,6 +126,7 @@ jobs:
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
           SEND_WHATSAPP: ${{ secrets.SEND_WHATSAPP }}
+          MAX_OUTREACH_PER_DAY: '3'
         run: python -c "from src.email_outreach import process_run; import os; process_run(os.environ['GITHUB_RUN_ID'])"
 
       - name: Save state
