@@ -10,6 +10,8 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from .whatsapp_outreach import extract_phone, send_whatsapp
+
 ROOT = Path(__file__).resolve().parents[1]
 COMPANY = json.loads((ROOT / "config/company.json").read_text(encoding="utf-8"))
 LEADS = ROOT / "data/social_leads.csv"
@@ -23,7 +25,7 @@ CLOUDFLARE_DEFAULT_MODEL = "@cf/zai-org/glm-4.7-flash"
 HEADERS = {"User-Agent": "Mozilla/5.0 ROZHAN-Global-Outreach/1.0"}
 FIELDS = [
     "run_id", "platform", "slot", "target_name", "target_url", "recipient_email",
-    "subject", "body", "status", "provider", "source", "created_at"
+    "subject", "body", "status", "provider", "source", "whatsapp_phone", "whatsapp_status", "created_at"
 ]
 
 
@@ -290,6 +292,8 @@ def process_run(run_id: str) -> None:
             "status": "no_public_business_email",
             "provider": "",
             "source": source,
+            "whatsapp_phone": "",
+            "whatsapp_status": "not_checked",
             "created_at": lead.get("created_at", ""),
         }
         if not email:
@@ -305,6 +309,13 @@ def process_run(run_id: str) -> None:
             _save(base)
             continue
         base.update({"subject": generated["subject"], "body": generated["body"], "provider": provider, "status": "draft"})
+        phone = extract_phone(website)
+        base["whatsapp_phone"] = phone
+        if phone:
+            wa_ok, wa_status = send_whatsapp(phone, generated["body"])
+            base["whatsapp_status"] = wa_status
+        else:
+            base["whatsapp_status"] = "no_public_phone"
         if send_enabled and sends < max_sends:
             ok, status = _send(email, generated["subject"], generated["body"])
             base["status"] = status
