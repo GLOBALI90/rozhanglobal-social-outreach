@@ -297,6 +297,7 @@ def process_run(run_id: str) -> None:
         social_context = _load_social_context(run_id, target_url)
         website = _find_company_website(name, lead.get("country", "China"), lead.get("sector", ""))
         email, source = _extract_emails(website)
+        phone = extract_phone(website)
         base = {
             "run_id": run_id,
             "platform": lead.get("platform", ""),
@@ -313,10 +314,11 @@ def process_run(run_id: str) -> None:
             "whatsapp_status": "not_checked",
             "created_at": lead.get("created_at", ""),
         }
-        if not email:
+        base["whatsapp_phone"] = phone
+        if not email and not phone:
             _save(base)
             continue
-        if email in sent:
+        if email in sent and not phone:
             base["status"] = "already_contacted"
             _save(base)
             continue
@@ -326,8 +328,6 @@ def process_run(run_id: str) -> None:
             _save(base)
             continue
         base.update({"subject": generated["subject"], "body": generated["body"], "provider": provider, "status": "draft"})
-        phone = extract_phone(website)
-        base["whatsapp_phone"] = phone
         if phone and daily_used < daily_cap:
             wa_ok, wa_status = send_whatsapp(phone, generated["body"])
             base["whatsapp_status"] = wa_status
