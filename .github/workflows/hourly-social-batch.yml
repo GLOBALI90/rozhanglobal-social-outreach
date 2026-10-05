@@ -120,8 +120,12 @@ jobs:
           YOU_SEARCH_URL: ${{ secrets.YOU_SEARCH_URL }}
           GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SEND_EMAILS: 'false'
-          MAX_EMAILS_PER_RUN: '0'
+          SEND_EMAILS: ${{ secrets.SEND_EMAILS }}
+          MAX_EMAILS_PER_RUN: '1'
+          WAHA_URL: ${{ secrets.WAHA_URL }}
+          WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
+          WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
+          SEND_WHATSAPP: ${{ secrets.SEND_WHATSAPP }}
         run: python -c "from src.email_outreach import process_run; import os; process_run(os.environ['GITHUB_RUN_ID'])"
 
       - name: Save state
