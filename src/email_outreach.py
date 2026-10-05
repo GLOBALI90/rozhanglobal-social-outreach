@@ -36,6 +36,15 @@ def _domain(url: str) -> str:
         return ""
 
 
+def _load_sent_whatsapp() -> set[str]:
+    if not OUTREACH.exists():
+        return set()
+    try:
+        with OUTREACH.open(encoding="utf-8") as f:
+            return {str(r.get("whatsapp_phone", "")).strip() for r in csv.DictReader(f) if r.get("whatsapp_status") == "sent" and r.get("whatsapp_phone")}
+    except Exception:
+        return set()
+
 def _daily_outreach_count() -> int:
     if not OUTREACH.exists():
         return 0
@@ -283,6 +292,7 @@ def process_run(run_id: str) -> None:
     if not LEADS.exists():
         return
     sent = _load_sent()
+    sent_whatsapp = _load_sent_whatsapp()
     with LEADS.open(encoding="utf-8") as f:
         leads = [r for r in csv.DictReader(f) if r.get("run_id") == run_id]
     send_enabled = os.getenv("SEND_EMAILS", "false").strip().lower() == "true"
@@ -328,9 +338,13 @@ def process_run(run_id: str) -> None:
             _save(base)
             continue
         base.update({"subject": generated["subject"], "body": generated["body"], "provider": provider, "status": "draft"})
-        if phone and daily_used < daily_cap:
+        if phone in sent_whatsapp:
+            base["whatsapp_status"] = "already_contacted"
+        elif phone and daily_used < daily_cap:
             wa_ok, wa_status = send_whatsapp(phone, generated["body"])
             base["whatsapp_status"] = wa_status
+            if wa_ok:
+                sent_whatsapp.add(phone)
         else:
             base["whatsapp_status"] = "no_public_phone"
         if send_enabled and sends < max_sends and daily_used < daily_cap:
