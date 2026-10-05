@@ -36,6 +36,21 @@ def _domain(url: str) -> str:
         return ""
 
 
+def _daily_outreach_count() -> int:
+    if not OUTREACH.exists():
+        return 0
+    today = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).date().isoformat()
+    count = 0
+    try:
+        with OUTREACH.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                created = str(row.get("created_at", ""))
+                if created.startswith(today) and (row.get("status") == "sent" or row.get("whatsapp_status") == "sent"):
+                    count += 1
+    except Exception:
+        return 0
+    return count
+
 def _load_sent() -> set[str]:
     if not OUTREACH.exists():
         return set()
@@ -273,6 +288,8 @@ def process_run(run_id: str) -> None:
     send_enabled = os.getenv("SEND_EMAILS", "false").strip().lower() == "true"
     max_sends = int(os.getenv("MAX_EMAILS_PER_RUN", "1"))
     sends = 0
+    daily_cap = int(os.getenv("MAX_OUTREACH_PER_DAY", "3"))
+    daily_used = _daily_outreach_count()
 
     for lead in leads:
         name = lead.get("name", "").strip()
@@ -311,17 +328,19 @@ def process_run(run_id: str) -> None:
         base.update({"subject": generated["subject"], "body": generated["body"], "provider": provider, "status": "draft"})
         phone = extract_phone(website)
         base["whatsapp_phone"] = phone
-        if phone:
+        if phone and daily_used < daily_cap:
             wa_ok, wa_status = send_whatsapp(phone, generated["body"])
             base["whatsapp_status"] = wa_status
         else:
             base["whatsapp_status"] = "no_public_phone"
-        if send_enabled and sends < max_sends:
+        if send_enabled and sends < max_sends and daily_used < daily_cap:
             ok, status = _send(email, generated["subject"], generated["body"])
             base["status"] = status
             if ok:
                 sent.add(email)
                 sends += 1
+        if base.get("status") == "sent" or base.get("whatsapp_status") == "sent":
+            daily_used += 1
         _save(base)
 
     print(f"OUTREACH COMPLETE | run_id={run_id} | email_send_enabled={send_enabled} | sent={sends} | max_per_run={max_sends}")
