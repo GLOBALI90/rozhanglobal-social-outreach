@@ -81,8 +81,6 @@ def send_whatsapp(phone: str, message: str) -> tuple[bool, str]:
         payload = last_status.json()
         if isinstance(payload, dict) and payload.get("numberExists") is False:
             return False, "whatsapp_number_not_registered"
-        if status.ok and isinstance(status.json(), dict) and status.json().get("numberExists") is False:
-            return False, "whatsapp_number_not_registered"
         response = requests.post(
             f"{base}/api/sendText",
             headers={**headers, "Content-Type": "application/json"},
