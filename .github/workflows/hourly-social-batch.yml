@@ -2,8 +2,6 @@ name: ROZHAN Social 10-Record 3-Hour Batch
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */3 * * *'
 
 permissions:
   contents: write
